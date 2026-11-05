@@ -1,0 +1,23 @@
+{
+  "images": 10015,
+  "unique_lesions": 7470,
+  "lesions_with_multiple_images": 1956,
+  "v1_image_split": {
+    "test_images": 1503,
+    "test_images_whose_lesion_is_in_train": 543,
+    "pct_test_images_leaked": 36.1,
+    "pct_leaked_by_class": {
+      "akiec": 36.7,
+      "bcc": 70.1,
+      "bkl": 50.3,
+      "df": 41.2,
+      "mel": 63.5,
+      "nv": 26.6,
+      "vasc": 31.8
+    }
+  },
+  "v2_lesion_split": {
+    "test_images": 1502,
+    "test_images_whose_lesion_is_in_train": 0
+  }
+}
