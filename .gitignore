@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+
+# Data (download with `python download_data.py`)
+data/
+
+# Model weights and large artifacts (publish to Hugging Face Hub / Git LFS instead)
+*.pth
+*.pt
+*.onnx
+*.npy
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
