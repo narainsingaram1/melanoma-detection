@@ -26,6 +26,38 @@ This project implements a 5-phase pipeline:
 4. **Explainability** — Grad-CAM visualizations show which image regions drive predictions
 5. **Deployment** — Gradio web interface for interactive diagnosis
 
+## 🧪 v2: Leakage-free evaluation & controlled ablation
+
+The v1 numbers in `results/*.json` used an **image-level** split. HAM10000 has ~10k
+images of ~7.5k lesions, so photos of the same lesion landed in both train and test,
+which inflates test scores (`python -m experiments.leakage_report` quantifies this).
+v2 fixes the methodology:
+
+| | v1 | v2 |
+|---|---|---|
+| Split | random by image | **stratified by `lesion_id`** (no lesion in two splits; unit-tested) |
+| Comparison | different recipe per model | **identical recipe**, only the imbalance strategy changes |
+| Seeds | 1 | **3 training seeds**, mean ± std |
+| Metrics | accuracy, macro F1 | + **balanced accuracy, macro AUROC, melanoma sensitivity @ 90% specificity**, lesion-level **bootstrap 95% CIs** |
+| Synthetic data | raw Tanh output in [-1, 1] fed to an ImageNet-normalized classifier | converted to pixels → same augmentation + normalization as real images |
+| GAN quality | not measured | **FID / KID** per class vs. a real-vs-real reference |
+
+Variants (`experiments/run_ablation.py`): `plain` (unweighted CE), `weighted_loss`
+(class-weighted CE), `oversample` (class-balanced sampler), `dcgan` (weighted CE +
+3,000 synthetic mel/df images), `baseline_cnn` (custom CNN reference). `dcgan` vs.
+`weighted_loss` isolates the effect of the GAN.
+
+```bash
+python download_data.py
+python -m experiments.leakage_report            # v1 leakage stats -> results/leakage_report.json
+python -m experiments.run_ablation --smoke      # 1-minute pipeline check
+python -m experiments.run_ablation              # full run -> results/ablation/summary.md
+python -m pytest                                # split / metric / GAN unit tests
+```
+
+Model selection uses validation balanced accuracy for every variant (validation loss
+is not comparable across weighted and unweighted losses).
+
 ## 📊 Dataset
 
 **HAM10000** — "Human Against Machine with 10,000 training images"

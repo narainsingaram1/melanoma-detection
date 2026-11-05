@@ -53,9 +53,36 @@ class HAM10000Dataset(Dataset):
         return image, label
 
 
-def prepare_data(metadata_path: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def split_by_lesion(df: pd.DataFrame, val_frac: float = 0.15, test_frac: float = 0.15,
+                    seed: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Reads metadata, maps labels to integers, and performs stratified split (70/15/15).
+    Stratified train/val/test split at the *lesion* level.
+
+    HAM10000 contains ~10k images of ~7.5k unique lesions: the same lesion is often
+    photographed several times. Splitting by image lets near-duplicate photos of one
+    lesion land in both train and test, which inflates test metrics. Here every image
+    of a lesion goes to exactly one split, stratified by the lesion's diagnosis.
+    """
+    group_col = 'lesion_id' if 'lesion_id' in df.columns else 'image_id'
+    lesions = df.groupby(group_col)['label_idx'].first().reset_index()
+
+    train_les, temp_les = train_test_split(
+        lesions, test_size=val_frac + test_frac,
+        stratify=lesions['label_idx'], random_state=seed)
+    val_les, test_les = train_test_split(
+        temp_les, test_size=test_frac / (val_frac + test_frac),
+        stratify=temp_les['label_idx'], random_state=seed)
+
+    def pick(les):
+        return df[df[group_col].isin(set(les[group_col]))].reset_index(drop=True)
+
+    return pick(train_les), pick(val_les), pick(test_les)
+
+
+def prepare_data(metadata_path: str, seed: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Reads metadata, maps labels to integers, and performs a lesion-level
+    stratified split (~70/15/15 of lesions).
     """
     df = pd.read_csv(metadata_path)
 
@@ -67,13 +94,9 @@ def prepare_data(metadata_path: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Dat
     df = df.dropna(subset=['label_idx'])
     df['label_idx'] = df['label_idx'].astype(int)
 
-    # Stratified split: 70% train, 30% temp
-    train_df, temp_df = train_test_split(df, test_size=0.30, stratify=df['label_idx'], random_state=42)
+    train_df, val_df, test_df = split_by_lesion(df, seed=seed)
 
-    # Stratified split temp into 15% val, 15% test
-    val_df, test_df = train_test_split(temp_df, test_size=0.50, stratify=temp_df['label_idx'], random_state=42)
-
-    print(f"Data split: Train={len(train_df)}, Val={len(val_df)}, Test={len(test_df)}")
+    print(f"Data split (lesion-level): Train={len(train_df)}, Val={len(val_df)}, Test={len(test_df)} images")
     return train_df, val_df, test_df
 
 

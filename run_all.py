@@ -1,6 +1,14 @@
 """
-Optimized master script - runs each phase with practical training configurations.
-Designed for Apple Silicon MPS with reasonable training times.
+LEGACY (v1) master script - kept so the original run can be reproduced.
+
+Known issues, fixed in `experiments/run_ablation.py` + `src/synthetic.py`:
+  * GAN is trained on ImageNet-normalized images (range ~[-2, 2.6]) but its Tanh
+    output is bounded to [-1, 1], and synthetic images are fed to the classifier
+    without matching normalization.
+  * Transfer and GAN-augmented models use different training recipes, so the
+    comparison does not isolate the effect of synthetic data.
+Note: src.dataset.prepare_data now splits by lesion_id, so re-running this
+script no longer reproduces the v1 (image-level split) numbers in results/.
 """
 import os
 import sys

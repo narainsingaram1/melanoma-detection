@@ -1,6 +1,9 @@
 """
-Phase 3: Train conditional DCGAN on rare classes, generate synthetic data,
+LEGACY (v1) Phase 3: Train conditional DCGAN on rare classes, generate synthetic data,
 retrain classifier on augmented dataset, and compare results.
+
+Superseded by `experiments/run_ablation.py --variants dcgan` (see src/synthetic.py
+for the normalization and augmentation fixes).
 """
 import os
 import sys
