@@ -27,4 +27,3 @@ venv/
 models/*
 !models/model_info.json
 build/
-.claude/
