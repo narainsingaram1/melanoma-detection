@@ -39,7 +39,9 @@ def preprocess(img: Image.Image) -> np.ndarray:
         raise ValueError('image too large')
     img = img.convert('RGB').resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
     x = np.asarray(img, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0
-    return ((x - MEAN) / STD).astype(np.float32)
+    # The HWC->CHW transpose leaves channels-last strides; PyTorch's CPU conv path is
+    # ~4x slower on that layout, so force a C-contiguous NCHW array.
+    return np.ascontiguousarray((x - MEAN) / STD, dtype=np.float32)
 
 
 def softmax(z: np.ndarray) -> np.ndarray:

@@ -90,6 +90,17 @@ bash scripts/make_space.sh && hf upload <user>/melanoma-detection build/hf_space
 
 CI (`.github/workflows/ci.yml`) runs the split, metric, GAN and API tests on every push.
 
+### Why the demo serves `plain`, not `dcgan`
+
+`dcgan` has the best balanced accuracy (0.804 vs 0.754 for `weighted_loss`), but its
+DCGAN images are far from realistic (FID 349 vs a real-vs-real reference of 68), and
+training on them taught the classifier that noise-like textures are lesions. At the same
+OOD threshold, `dcgan` rejects only ~58% of random-noise images and ~56% of non-lesion
+photos, and labels most of the noise it accepts as melanoma or dermatofibroma; `plain`
+rejects 100% and 92%. `plain` also has the best macro AUROC (0.961) and melanoma
+sensitivity at 90% specificity (0.701), so it is the safer model for a public demo.
+Better generative models (StyleGAN2-ADA, diffusion) are the planned fix for the GAN path.
+
 ## 📊 Dataset
 
 **HAM10000** — "Human Against Machine with 10,000 training images"

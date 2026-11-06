@@ -5,6 +5,8 @@ Interactive Gradio Web Application with Multi-Tab UI & Detailed Technical Page
 import os
 import sys
 import json
+import io
+import base64
 import torch
 import numpy as np
 import cv2
@@ -12,7 +14,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
-from torchvision import transforms
 import gradio as gr
 
 # Add project root to path
@@ -21,7 +22,7 @@ sys.path.insert(0, project_root)
 
 from src.constants import CLASSES, CLASS_NAMES, IMG_SIZE
 from src.gradcam import GradCAM, get_target_layer
-from src.inference import TorchLesionClassifier, ensure_model_dir
+from src.inference import RISK, TorchLesionClassifier, ensure_model_dir
 
 # CPU by default (HF Spaces free tier); set APP_DEVICE=mps/cuda locally if wanted
 device = torch.device(os.environ.get('APP_DEVICE', 'cpu'))
@@ -53,94 +54,96 @@ def load_model():
     return f"EfficientNet-B0 ({info['variant']}, seed {info['seed']})"
 
 
+RISK_LABEL = {'malignant': 'Malignant class', 'pre-malignant': 'Pre-malignant class', 'benign': 'Benign class'}
+
+
+def _png_uri(arr_or_img) -> str:
+    img = arr_or_img if isinstance(arr_or_img, Image.Image) else Image.fromarray(arr_or_img)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+
+def _note(title, body):
+    return f'<div class="mx-card mx-note"><div class="mx-note-title">{title}</div><p>{body}</p></div>'
+
+
+EMPTY_RESULT = _note('No image analyzed yet',
+                     'Upload a dermoscopy image or pick one of the held-out test images, then select Analyze image')
+EMPTY_PLATE = ''
+
+
+def _tag(res, image):
+    w, h = image.size
+    return (f"{w}×{h} → 224×224 · T = {clf.post.temperature:.2f} · "
+            f"OOD {res['ood_score']:.0f} / {res['ood_threshold']:.0f} · {res['latency_ms']:.0f} ms")
+
+
+def result_html(res, image):
+    """Ranked, calibrated class probabilities. The top class carries the accent."""
+    code = res['prediction']['code']
+    ranked = sorted(res['probabilities'].items(), key=lambda kv: kv[1], reverse=True)
+    rows = []
+    for i, (c, prob) in enumerate(ranked):
+        rows.append(
+            f'<li class="mx-row{" is-top" if i == 0 else ""}">'
+            f'<span class="mx-dot risk-{RISK[c]}"></span>'
+            f'<span class="mx-cls">{CLASS_NAMES[c]}</span><span class="mx-code">{c}</span>'
+            f'<span class="mx-track"><span class="mx-fill" style="width:{max(prob * 100, 0.5):.1f}%"></span></span>'
+            f'<span class="mx-pct">{prob * 100:.1f}%</span></li>')
+    (_, p1), (c2, p2) = ranked[0], ranked[1]
+    close = (f'<p class="mx-close">Close call: {CLASS_NAMES[c2]} is {(p1 - p2) * 100:.1f} points behind</p>'
+             if p1 - p2 < 0.10 else '')
+    return f"""
+    <div class="mx-card">
+      <div class="mx-kicker">Most likely</div>
+      <div class="mx-head">
+        <div class="mx-title">{CLASS_NAMES[code]}</div>
+        <div class="mx-big">{res['prediction']['probability'] * 100:.1f}%</div>
+      </div>
+      <div class="mx-sub"><span class="mx-dot risk-{RISK[code]}"></span>{RISK_LABEL[RISK[code]]} · calibrated probability</div>{close}
+      <ol class="mx-list">{''.join(rows)}</ol>
+      <div class="mx-tag">{_tag(res, image)}</div>
+    </div>"""
+
+
+def plate_html(image, heatmap, pred_code):
+    """Specimen plate: input, Grad-CAM heatmap and overlay at the model's 224×224 input size."""
+    img = np.array(image.convert('RGB').resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR))
+    heat = cv2.applyColorMap(np.uint8(255 * heatmap), cv2.COLORMAP_INFERNO)[:, :, ::-1]
+    overlay = np.clip(0.55 * img + 0.45 * heat, 0, 255).astype(np.uint8)
+    cells = [('Input', img), ('Grad-CAM', heat), (f'Overlay · {CLASS_NAMES[pred_code]}', overlay)]
+    figs = ''.join(f'<figure><img src="{_png_uri(a)}" alt="{t}"><figcaption>{t}</figcaption></figure>'
+                   for t, a in cells)
+    return f"""
+    <div class="mx-card">
+      <div class="mx-kicker">Where the model looked</div>
+      <div class="mx-plate">{figs}</div>
+      <p class="mx-caption">Brighter regions contributed more to the predicted class. Grad-CAM on the last
+      convolutional block of EfficientNet-B0, upsampled from 7×7</p>
+    </div>"""
+
+
 def predict(image):
     """Calibrated prediction + out-of-distribution check + Grad-CAM for one uploaded image."""
     if image is None:
-        return "⚠️ Please upload or select a skin lesion image.", {}, None
+        return EMPTY_RESULT, EMPTY_PLATE
     if clf is None:
-        return "⚠️ Model weights not available. Run scripts/build_release.py or set HF_MODEL_REPO.", {}, None
-
+        return _note('Model not loaded', 'Run scripts/build_release.py or set HF_MODEL_REPO'), EMPTY_PLATE
     try:
         res = clf.predict(image)
     except ValueError:
-        return "⚠️ Image is too large. Please upload a smaller photo.", {}, None
+        return _note('Image too large', 'Upload a photo under 40 megapixels'), EMPTY_PLATE
 
     if not res['in_distribution']:
-        return f"""
-        <div style="background: rgba(17, 24, 39, 0.8); border: 1px solid #f59e0b; border-radius: 12px; padding: 18px;">
-            <div style="font-size: 18px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">Image rejected: not a dermoscopic lesion</div>
-            <div style="color: #d1d5db;">This image is far from anything the model was trained on
-            (OOD score {res['ood_score']:.0f} &gt; threshold {res['ood_threshold']:.0f}), so no prediction is shown.
-            Upload a close-up dermoscopy image of a single skin lesion.</div>
-        </div>""", {}, None
+        return _note('Not a dermoscopy image',
+                     'This image is far from anything the model was trained on, so no prediction is shown. '
+                     'Upload a close-up dermoscopy image of a single skin lesion.'
+                     f'<span class="mx-tag">{_tag(res, image)}</span>'), EMPTY_PLATE
 
-    pred_code = res['prediction']['code']
-    pred_idx = CLASSES.index(pred_code)
-    pred_name = CLASS_NAMES[pred_code]
-    pred_confidence = res['prediction']['probability']
-    confidences = {f"{CLASS_NAMES[c]} ({c})": p for c, p in res['probabilities'].items()}
-
-    # Risk badge formatting
-    risk_color = "#ef4444" if pred_code in ['mel', 'bcc', 'akiec'] else "#10b981"
-    risk_label = "MALIGNANT / HIGH RISK" if pred_code in ['mel', 'bcc'] else ("PRE-MALIGNANT" if pred_code == 'akiec' else "BENIGN / LOW RISK")
-
-    summary_html = f"""
-    <div style="background: rgba(17, 24, 39, 0.8); border: 1px solid {risk_color}; border-radius: 12px; padding: 18px; margin-bottom: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af;">Primary Prediction</span>
-            <span style="background: {risk_color}; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px;">{risk_label}</span>
-        </div>
-        <div style="font-size: 26px; font-weight: 800; color: #ffffff; margin-bottom: 4px;">
-            {pred_name} <span style="font-size: 18px; font-weight: 500; color: #a78bfa;">({pred_code.upper()})</span>
-        </div>
-        <div style="font-size: 15px; color: #d1d5db;">
-            Calibrated probability: <strong style="color: #38bdf8; font-size: 18px;">{pred_confidence:.2%}</strong>
-        </div>
-        <div style="font-size: 12px; color: #9ca3af; margin-top: 8px;">{DISCLAIMER}</div>
-    </div>
-    """
-
-    # Generate Grad-CAM
-    heatmap, _, _ = gradcam_instance.generate_cam(clf.tensor(image), target_class=pred_idx)
-    fig = create_gradcam_figure(image, heatmap, pred_idx, pred_confidence)
-
-    return summary_html, confidences, fig
-
-
-def create_gradcam_figure(original_image, heatmap, pred_class, confidence):
-    """Create a side-by-side Grad-CAM visualization figure with custom dark styling."""
-    img = original_image.resize((IMG_SIZE, IMG_SIZE))
-    img_array = np.array(img) / 255.0
-
-    # Colorize heatmap
-    heatmap_uint8 = np.uint8(255 * heatmap)
-    heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
-    heatmap_color = np.float32(heatmap_color[:, :, ::-1]) / 255.0
-
-    # Visual overlay
-    overlay = 0.55 * img_array + 0.45 * heatmap_color
-    overlay = np.clip(overlay, 0, 1)
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), facecolor='#0f172a')
-
-    for ax in axes:
-        ax.set_facecolor('#0f172a')
-
-    axes[0].imshow(img_array)
-    axes[0].set_title('Original Dermatoscopic Image', color='#94a3b8', fontsize=13, fontweight='600', pad=10)
-    axes[0].axis('off')
-
-    axes[1].imshow(heatmap, cmap='jet')
-    axes[1].set_title('Grad-CAM Attention Heatmap', color='#38bdf8', fontsize=13, fontweight='600', pad=10)
-    axes[1].axis('off')
-
-    pred_name = CLASS_NAMES[CLASSES[pred_class]]
-    axes[2].imshow(overlay)
-    axes[2].set_title(f'Attention Overlay ({pred_name})', color='#a78bfa', fontsize=13, fontweight='600', pad=10)
-    axes[2].axis('off')
-
-    plt.tight_layout()
-    return fig
+    code = res['prediction']['code']
+    heatmap, _, _ = gradcam_instance.generate_cam(clf.tensor(image), target_class=CLASSES.index(code))
+    return result_html(res, image), plate_html(image, heatmap, code)
 
 
 # Helper to get sample image paths
@@ -152,158 +155,154 @@ def get_sample_images():
     return []
 
 
-# Custom CSS for modern glassmorphic theme
+def class_reference_html():
+    rows = ''.join(f'<li><span class="mx-dot risk-{RISK[c]}"></span><span class="mx-cls">{CLASS_NAMES[c]}</span>'
+                   f'<span class="mx-code">{c}</span><span class="mx-risk">{RISK_LABEL[RISK[c]].replace(" class", "")}</span></li>'
+                   for c in ['mel', 'bcc', 'akiec', 'bkl', 'df', 'nv', 'vasc'])
+    return f'<div class="mx-ref"><div class="mx-kicker">Classes</div><ul>{rows}</ul></div>'
+
+
+# Light clinical theme: tinted neutral ramp, one ink-teal accent, IBM Plex
+INK = '#0f6b78'
+THEME = gr.themes.Base(
+    font=[gr.themes.GoogleFont('IBM Plex Sans'), 'system-ui', 'sans-serif'],
+    font_mono=[gr.themes.GoogleFont('IBM Plex Mono'), 'ui-monospace', 'monospace'],
+    radius_size=gr.themes.sizes.radius_md,
+)
+# Same values for light and dark so the clinical light palette always applies
+THEME.set(**{k + sfx: v for k, v in {
+    'body_background_fill': '#fafaf9',
+    'body_text_color': '#1c1917',
+    'body_text_color_subdued': '#57534e',
+    'background_fill_primary': '#ffffff',
+    'background_fill_secondary': '#f5f5f4',
+    'block_background_fill': '#ffffff',
+    'block_border_color': 'rgba(28, 25, 23, 0.08)',
+    'block_border_width': '1px',
+    'block_shadow': 'none',
+    'block_radius': '12px',
+    'block_label_text_color': '#57534e',
+    'block_label_background_fill': '#ffffff',
+    'block_title_text_color': '#57534e',
+    'border_color_primary': 'rgba(28, 25, 23, 0.08)',
+    'border_color_accent': INK,
+    'color_accent': INK,
+    'color_accent_soft': 'rgba(15, 107, 120, 0.08)',
+    'input_background_fill': '#ffffff',
+    'button_primary_background_fill': INK,
+    'button_primary_background_fill_hover': '#0c5a65',
+    'button_primary_text_color': '#ffffff',
+    'button_primary_border_color': INK,
+    'button_secondary_background_fill': '#f5f5f4',
+    'button_secondary_background_fill_hover': '#ecebe9',
+    'button_secondary_text_color': '#1c1917',
+    'link_text_color': INK,
+    'table_border_color': 'rgba(28, 25, 23, 0.08)',
+    'table_even_background_fill': '#ffffff',
+    'table_odd_background_fill': '#fafaf9',
+}.items() for sfx in ('', '_dark') if hasattr(THEME, k + sfx)})
+
 CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap');
-
-.gradio-container {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
-    background: linear-gradient(135deg, #0b0f19 0%, #111827 50%, #1e1b4b 100%) !important;
-    min-height: 100vh;
-    color: #f3f4f6 !important;
+:root {
+    --mx-bg: #fafaf9; --mx-card: #ffffff; --mx-raised: #f5f5f4;
+    --mx-line: rgba(28, 25, 23, 0.08);
+    --mx-text: #1c1917; --mx-text-2: #57534e; --mx-text-3: #78716c;
+    --mx-ink: #0f6b78; --mx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --mx-mal: #c2410c; --mx-pre: #b7791f; --mx-ben: #6b8f71;
 }
+body .gradio-container { width: 100% !important; max-width: 1440px !important; margin: 0 auto !important; padding: 0 !important; }
+body .gradio-container .main.fillable { padding: 0 clamp(16px, 4vw, 32px) 64px !important; }  /* clamp: Gradio rewrites selectors inside @media */
+body .gradio-container .html-container { padding: 0 !important; }
+footer { display: none !important; }
 
-/* Glassmorphism Card Panels */
-.glass-card {
-    background: rgba(17, 24, 39, 0.75) !important;
-    backdrop-filter: blur(16px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 16px !important;
-    padding: 24px !important;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3) !important;
-    margin-bottom: 20px !important;
-}
+/* Header */
+.mx-header { padding: clamp(24px, 4vw, 32px) 0 24px; border-bottom: 1px solid var(--mx-line); margin-bottom: 8px; }
+.mx-brand { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.mx-name { font-size: 18px; font-weight: 600; color: var(--mx-text); }
+.mx-meta, .mx-code, .mx-pct, .mx-tag, .mx-big { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.mx-meta { font-size: 12px; color: var(--mx-text-3); }
+.mx-lede { margin: 12px 0 0; font-size: 20px; line-height: 30px; color: var(--mx-text); max-width: 44rem; font-weight: 400; }
+.mx-disclaimer { margin: 12px 0 0; font-size: 13px; line-height: 20px; color: var(--mx-text-2); max-width: 44rem; }
 
-/* Header Styling */
-.app-header {
-    text-align: center;
-    padding: 30px 20px;
-    background: linear-gradient(180deg, rgba(30, 27, 75, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%);
-    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
-    border-radius: 20px;
-    margin-bottom: 25px;
-}
+/* Tabs */
+.tab-nav button, button[role="tab"] { font-size: 14px !important; font-weight: 500 !important; color: var(--mx-text-2) !important; padding: 8px 16px !important; }
+.tab-nav button.selected, button[role="tab"][aria-selected="true"] { color: var(--mx-text) !important; }
 
-.app-title {
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 2.8rem !important;
-    font-weight: 800 !important;
-    background: linear-gradient(135deg, #a78bfa 0%, #38bdf8 50%, #34d399 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 10px !important;
-}
+/* Cards */
+.mx-card { background: var(--mx-card); border: 1px solid var(--mx-line); border-radius: 12px; padding: 24px; }
+.mx-kicker { font-size: 13px; color: var(--mx-text-3); margin-bottom: 8px; }
+.mx-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.mx-title { font-size: 32px; line-height: 1.15; font-weight: 500; color: var(--mx-text); }
+.mx-big { font-size: 32px; line-height: 1; font-weight: 500; color: var(--mx-ink); }
+.mx-close { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--mx-raised); font-size: 14px; color: var(--mx-text); }
+.mx-sub { margin-top: 8px; font-size: 14px; color: var(--mx-text-2); display: flex; align-items: center; gap: 8px; }
 
-.app-subtitle {
-    font-size: 1.15rem;
-    color: #94a3b8;
-    max-width: 800px;
-    margin: 0 auto 15px auto;
-}
+/* Ranked probabilities */
+.mx-list { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mx-row { display: grid; grid-template-columns: 8px 172px 48px 1fr 56px; align-items: center; gap: 12px; height: 32px; font-size: 14px; color: var(--mx-text-2); }
+.mx-row.is-top { color: var(--mx-text); font-weight: 500; }
+.mx-code { font-size: 12px; color: var(--mx-text-3); }
+.mx-track { height: 6px; border-radius: 4px; background: var(--mx-raised); overflow: hidden; }
+.mx-fill { display: block; height: 100%; border-radius: 4px; background: #d6d3d1; transition: width 300ms var(--mx-ease); }
+.mx-row.is-top .mx-fill { background: var(--mx-ink); }
+.mx-pct { font-size: 13px; text-align: right; }
+.mx-dot { width: 8px; height: 8px; border-radius: 4px; display: inline-block; flex: none; }
+.risk-malignant { background: var(--mx-mal); } .risk-pre-malignant { background: var(--mx-pre); } .risk-benign { background: var(--mx-ben); }
 
-/* Badges */
-.badge-container {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
+/* Signature: specimen tag */
+.mx-tag { display: block; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--mx-line); font-size: 12px; color: var(--mx-text-3); }
 
-.badge {
-    background: rgba(139, 92, 246, 0.15);
-    border: 1px solid rgba(139, 92, 246, 0.4);
-    color: #c4b5fd;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
+/* Specimen plate */
+.mx-plate { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.mx-plate figure { margin: 0; }
+.mx-plate img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; background: var(--mx-raised); }
+.mx-plate figcaption { margin-top: 8px; font-size: 13px; color: var(--mx-text-2); }
+.mx-caption { margin: 16px 0 0; font-size: 13px; line-height: 20px; color: var(--mx-text-3); max-width: 40rem; }
 
-.badge-green {
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.4);
-    color: #6ee7b7;
-}
+/* Notes and empty states */
+.mx-note-title { font-size: 16px; font-weight: 500; color: var(--mx-text); }
+.mx-note p { margin: 8px 0 0; font-size: 14px; line-height: 22px; color: var(--mx-text-2); }
 
-/* Custom Buttons */
-.btn-primary {
-    background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%) !important;
-    border: none !important;
-    color: white !important;
-    font-weight: 700 !important;
-    font-size: 1.1rem !important;
-    padding: 14px 28px !important;
-    border-radius: 12px !important;
-    box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4) !important;
-    transition: all 0.3s ease !important;
-}
+/* Class reference */
+.mx-ref ul { list-style: none; margin: 0; padding: 0; }
+.mx-ref li { display: grid; grid-template-columns: 8px 1fr 48px 96px; align-items: center; gap: 12px; height: 32px; font-size: 14px; color: var(--mx-text); }
+.mx-risk { font-size: 13px; color: var(--mx-text-3); text-align: right; }
 
-.btn-primary:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 25px rgba(124, 58, 237, 0.6) !important;
-}
+/* Primary action */
+.mx-analyze { min-height: 44px !important; font-size: 15px !important; font-weight: 500 !important; border-radius: 10px !important;
+    transition: background-color 150ms var(--mx-ease), transform 150ms var(--mx-ease) !important; }
+.mx-analyze:active { transform: scale(0.98); }
+button:focus-visible { outline: 2px solid var(--mx-ink) !important; outline-offset: 2px; }
 
-/* Tabs styling */
-.tabs {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
+/* Markdown tabs (results, method) */
+.mx-prose { max-width: 960px; }
+.mx-prose h2 { font-size: 24px !important; font-weight: 500 !important; margin: 32px 0 12px !important; }
+.mx-prose h3 { font-size: 18px !important; font-weight: 500 !important; margin: 32px 0 8px !important; }
+.mx-prose h1 { font-size: 28px !important; font-weight: 500 !important; }
+.mx-prose p, .mx-prose li { font-size: 15px; line-height: 24px; color: var(--mx-text-2); }
+.mx-prose strong { color: var(--mx-text); font-weight: 600; }
+.mx-prose table { font-size: 13px; font-variant-numeric: tabular-nums; border-collapse: collapse !important; border: 1px solid var(--mx-line) !important; }
+.mx-prose td, .mx-prose th { padding: 8px 12px !important; border: 1px solid var(--mx-line) !important; color: var(--mx-text) !important; }
+.mx-prose th { font-weight: 500 !important; background: var(--mx-raised) !important; }
+.mx-prose code { font-family: 'IBM Plex Mono', ui-monospace, monospace !important; font-size: 0.9em !important; background: var(--mx-raised) !important;
+    color: var(--mx-text) !important; padding: 1px 6px !important; border-radius: 4px !important; border: none !important; }
+.mx-prose pre { background: var(--mx-raised) !important; border: 1px solid var(--mx-line) !important; border-radius: 8px !important; }
+.mx-prose pre code { padding: 0 !important; }
 
-.tab-nav button {
-    font-size: 1.05rem !important;
-    font-weight: 600 !important;
-    padding: 12px 24px !important;
-    color: #94a3b8 !important;
-    border-radius: 10px 10px 0 0 !important;
-}
-
-.tab-nav button.selected {
-    color: #38bdf8 !important;
-    background: rgba(56, 189, 248, 0.1) !important;
-    border-bottom: 3px solid #38bdf8 !important;
-}
-
-/* KPI Cards */
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.kpi-card {
-    background: rgba(30, 41, 59, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    padding: 20px;
-    text-align: center;
-}
-
-.kpi-value {
-    font-family: 'Outfit', sans-serif;
-    font-size: 2.2rem;
-    font-weight: 800;
-    color: #38bdf8;
-}
-
-.kpi-label {
-    font-size: 0.9rem;
-    color: #94a3b8;
-    font-weight: 500;
-    margin-top: 4px;
-}
-
-.kpi-sub {
-    font-size: 0.8rem;
-    color: #34d399;
-    font-weight: 600;
-    margin-top: 2px;
+@media (max-width: 720px) {
+    .mx-lede { font-size: 18px; line-height: 28px; }
+    .mx-row { grid-template-columns: 8px 1fr 56px; }
+    .mx-row .mx-code, .mx-row .mx-track { display: none; }
+    .mx-plate { grid-template-columns: 1fr 1fr; }
 }
 """
+
+FORCE_LIGHT = "() => { document.body.classList.remove('dark'); document.documentElement.classList.remove('dark'); }"
 
 
 def results_markdown():
     """Results tab content, generated from committed result files (never hard-coded)."""
-    out = ["## 📈 Results (lesion-level split, held-out test set)"]
+    out = ["## Results on the held-out test set"]
     leak = _load_json('results', 'leakage_report.json')
     if leak:
         v1 = leak['v1_image_split']
@@ -314,7 +313,8 @@ def results_markdown():
     summary = os.path.join(project_root, 'results', 'ablation', 'summary.md')
     if os.path.exists(summary):
         with open(summary) as f:
-            out.append(f.read().replace('# Ablation results', '### Imbalance-strategy ablation', 1))
+            md = f.read().replace('# Ablation results (lesion-level split, test set)', '### Imbalance-strategy ablation', 1)
+            out.append(md.replace('\n## ', '\n### '))
     info = clf.post.info if clf else _load_json('models', 'model_info.json')
     if info:
         c, o = info['calibration'], info['ood']
@@ -340,205 +340,105 @@ def build_app():
     active_model_name = load_model()
     sample_imgs = get_sample_images()
 
-    with gr.Blocks(css=CUSTOM_CSS, title="Melanoma Detection AI & GAN Class Balancing") as demo:
+    info = clf.post.info if clf else {}
+    meta = (f"EfficientNet-B0 · {info.get('variant', 'no weights')} · seed {info.get('seed', '–')} · "
+            f"{str(device).upper()} · PyTorch {torch.__version__.split('+')[0]}")
 
-        # Header Section
+    with gr.Blocks(title="Melanoma Detection AI") as demo:
+
         gr.HTML(f"""
-        <div class="app-header">
-            <h1 class="app-title">🔬 Melanoma Detection AI</h1>
-            <p class="app-subtitle">
-                Deep Learning Skin Cancer Diagnostic Suite with <strong>DCGAN Class Balancing</strong> & <strong>Grad-CAM Explainable AI</strong>
-            </p>
-            <div class="badge-container">
-                <span class="badge badge-green">● Active Model: {active_model_name}</span>
-                <span class="badge">Inference: {str(device).upper()}</span>
-                <span class="badge">Dataset: HAM10000 (10,015 images, 7,470 lesions)</span>
-                <span class="badge">Framework: PyTorch {torch.__version__.split('+')[0]} + EfficientNet-B0</span>
-            </div>
-            <div style="margin-top: 10px; font-size: 13px; color: #fbbf24;">⚠️ {DISCLAIMER}
-            </div>
-        </div>
+        <header class="mx-header">
+          <div class="mx-brand"><span class="mx-name">Melanoma Detection AI</span><span class="mx-meta">{meta}</span></div>
+          <p class="mx-lede">Classifies a dermoscopy image into seven skin-lesion types, with calibrated
+          probabilities and a Grad-CAM map of the regions behind each prediction</p>
+          <p class="mx-disclaimer">{DISCLAIMER}</p>
+        </header>
         """)
 
-        with gr.Tabs(elem_classes="tabs"):
+        with gr.Tabs():
 
-            # ==========================================
-            # TAB 1: DIAGNOSTIC ANALYZER & GRAD-CAM
-            # ==========================================
-            with gr.TabItem("🔍 Live Diagnostic Analyzer & Grad-CAM"):
-
-                with gr.Row():
-
-                    # Left Column: Input & Controls
+            with gr.TabItem("Analyze"):
+                with gr.Row(equal_height=False):
                     with gr.Column(scale=5):
-                        gr.Markdown("### 📸 1. Input Lesion Image")
-
-                        input_image = gr.Image(
-                            type="pil",
-                            label="Upload or Select Lesion Image",
-                            height=320
-                        )
-
-                        analyze_btn = gr.Button("🔍 Run AI Diagnostic Analysis", variant="primary", elem_classes="btn-primary")
-
+                        input_image = gr.Image(type="pil", label="Dermoscopy image", height=360,
+                                               sources=["upload", "clipboard"])
+                        analyze_btn = gr.Button("Analyze image", variant="primary", elem_classes="mx-analyze")
                         if sample_imgs:
-                            gr.Markdown("### 🧪 Quick Test Examples")
-                            gr.Examples(
-                                examples=sample_imgs,
-                                inputs=input_image,
-                                label="Click any sample to load:"
-                            )
+                            gr.Examples(examples=sample_imgs, inputs=input_image,
+                                        label="Held-out test images, one per class")
+                        gr.HTML(class_reference_html())
 
-                        gr.Markdown("""
-                        ---
-                        ### 📋 Diagnostic Categories Reference
-                        | Class Code | Category Name | Severity Risk |
-                        | :--- | :--- | :--- |
-                        | **mel** | **Melanoma** | ⚠️ High Risk Malignant |
-                        | **bcc** | Basal Cell Carcinoma | ⚠️ High Risk Malignant |
-                        | **akiec** | Actinic Keratoses | 🟡 Pre-Malignant |
-                        | **bkl** | Benign Keratosis | 🟢 Benign |
-                        | **df** | Dermatofibroma | 🟢 Benign |
-                        | **nv** | Melanocytic Nevi | 🟢 Benign |
-                        | **vasc** | Vascular Lesions | 🟢 Benign |
-                        """)
-
-                    # Right Column: Diagnostic Output & Visualizations
                     with gr.Column(scale=7):
-                        gr.Markdown("### 📊 2. AI Diagnostic Results")
+                        output_result = gr.HTML(EMPTY_RESULT)
+                        output_plate = gr.HTML(EMPTY_PLATE)
 
-                        output_summary = gr.HTML(
-                            """
-                            <div style="background: rgba(17, 24, 39, 0.5); border: 1px dashed rgba(255,255,255,0.2); border-radius: 12px; padding: 30px; text-align: center; color: #9ca3af;">
-                                👈 Upload or select an image on the left and click <strong>Run AI Diagnostic Analysis</strong>.
-                            </div>
-                            """
-                        )
-
-                        output_label = gr.Label(
-                            label="Diagnostic Class Probabilities (7 Categories)",
-                            num_top_classes=7
-                        )
-
-                        gr.Markdown("### 🔥 3. Grad-CAM Explainable AI Heatmap")
-                        output_gradcam = gr.Plot(
-                            label="Attention Heatmap Overlay (Shows pixels driving prediction)"
-                        )
-
-                analyze_btn.click(
-                    fn=predict,
-                    inputs=input_image,
-                    outputs=[output_summary, output_label, output_gradcam]
-                )
+                analyze_btn.click(fn=predict, inputs=input_image, outputs=[output_result, output_plate])
 
             # ==========================================
             # TAB 2: EMPIRICAL RESULTS & BENCHMARKS
             # ==========================================
-            with gr.TabItem("📊 Empirical Results & Model Comparison"):
-
-                gr.Markdown(results_markdown())
+            with gr.TabItem("Results"):
+                gr.Markdown(results_markdown(), elem_classes="mx-prose")
 
             # ==========================================
             # TAB 3: TECHNICAL DEEP-DIVE & ARCHITECTURE
             # ==========================================
-            with gr.TabItem("📖 Technical Architecture & Deep-Dive"):
+            with gr.TabItem("Method"):
+                gr.Markdown(r"""
+## How the model was built and evaluated
 
-                gr.Markdown("""
-                # 🛠 Deep Learning Architecture & Pipeline Deep-Dive
+### The problem: class imbalance
+In HAM10000 (10,015 dermoscopy images of 7,470 lesions), benign nevi (`nv`) are 67% of images, while melanoma (`mel`) and dermatofibroma (`df`) are small minorities. A classifier trained naively can look accurate overall by favouring `nv` while missing the cancers that matter most.
 
-                This section details every phase of the engineering pipeline, mathematical formulation, and model specifications.
+- **Objective:** compare imbalance strategies (class-weighted loss, oversampling and conditional DCGAN synthetic images) under one training recipe, judged on balanced accuracy, macro AUROC and melanoma sensitivity at 90% specificity
+- **Leakage-free evaluation:** many lesions were photographed more than once. An image-level split put the same lesion in train and test for 36% of test images in the first version of this project, so every result here uses a lesion-level split
 
-                ---
+### 1. Baseline CNN
+A 4-block convolutional network trained from scratch as a reference point.
 
-                ## 🎯 1. Clinical Context & The Imbalance Problem
+```
+Input 224×224×3
+[Conv 3→32 → BN → ReLU → Conv 32→32 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 32→64 → BN → ReLU → Conv 64→64 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 64→128 → BN → ReLU → Conv 128→128 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 128→256 → BN → ReLU → Conv 256→256 → BN → ReLU → MaxPool → Dropout 0.25]
+Global average pool → Dense 256→128 → ReLU → Dropout 0.5 → Dense 128→7
+```
+Loss: inverse-frequency class-weighted cross-entropy, $\mathcal{L} = -\sum_c w_c\, y_c \log \hat{y}_c$ with $w_c = N / (C \cdot N_c)$. Results: `baseline_cnn` row in the Results tab
 
-                Skin cancer classification models face a fundamental failure mode in real-world deployment: **severe class imbalance**.
-                In the **HAM10000** dataset (10,015 dermatoscopic images), benign Melanocytic Nevi (`nv`) account for **67% of all samples**, while dangerous malignancies like **Melanoma (`mel`)** and rare lesions like **Dermatofibroma (`df`)** represent small fractions of the dataset.
+### 2. Transfer learning with EfficientNet-B0
+ImageNet-pretrained EfficientNet-B0 (~4.7M parameters), trained in two stages:
 
-                - **Failure Mode**: A standard Convolutional Neural Network trained on imbalanced data optimizes for global accuracy by predicting the majority class (`nv`), looking accurate overall while missing many of the cancers that matter most.
-                - **Engineering Objective**: Compare imbalance strategies (class-weighted loss, oversampling, and **Conditional DCGAN** synthetic images) under one controlled recipe, judged on balanced accuracy, AUROC, and melanoma sensitivity.
-                - **Leakage-free evaluation**: HAM10000 has ~10k images of 7,470 lesions. A naive image-level split put photos of the same lesion in train and test (36% of test images in the original version of this project). All results here use a **lesion-level split**.
+1. Last blocks and a new head (`Dense 1280→512 → ReLU → Dense 512→7`) at $lr = 10^{-3}$ for 3 epochs
+2. Full fine-tuning at $lr = 10^{-4}$ with ReduceLROnPlateau and early stopping
 
-                ---
+Checkpoints are selected on validation balanced accuracy, which stays comparable across weighted and unweighted losses
 
-                ## 🏗 2. Phase-by-Phase Technical Breakdown
+### 3. Conditional DCGAN augmentation
+A class-conditional DCGAN generates 224×224 images of the two rarest classes (`mel`, `df`).
 
-                ### Phase 1 — Custom Baseline CNN (Built from Scratch)
-                To establish an empirical baseline, we engineered a custom 4-block PyTorch CNN from first principles rather than importing a pre-existing architecture.
+- **Generator:** $z \in \mathbb{R}^{100}$ plus a 10-d class embedding → dense to $512 \times 7 \times 7$ → 5 transposed-conv blocks → Tanh
+- **Discriminator:** image plus a spatial class-embedding channel → 5 conv blocks with LeakyReLU 0.2 → real/fake sigmoid
+- **Training:** one-sided label smoothing (0.9 / 0.1); 1,500 synthetic images per class, converted to pixels and given the same augmentation and normalization as real images
+- **Quality:** FID and KID against a real-vs-real reference. Results: `dcgan` vs `weighted_loss` in the Results tab isolates the GAN's effect
 
-                ```
-                Input (224x224x3)
-                   │
-                [Conv(3→32, k=3, p=1) → BN → ReLU → Conv(32→32, k=3, p=1) → BN → ReLU → MaxPool(2) → Dropout(0.25)]
-                   │
-                [Conv(32→64, k=3, p=1) → BN → ReLU → Conv(64→64, k=3, p=1) → BN → ReLU → MaxPool(2) → Dropout(0.25)]
-                   │
-                [Conv(64→128, k=3, p=1) → BN → ReLU → Conv(128→128, k=3, p=1) → BN → ReLU → MaxPool(2) → Dropout(0.25)]
-                   │
-                [Conv(128→256, k=3, p=1) → BN → ReLU → Conv(256→256, k=3, p=1) → BN → ReLU → MaxPool(2) → Dropout(0.25)]
-                   │
-                Global Average Pooling (1x1) ──► Dense(256 → 128) ──► ReLU ──► Dropout(0.5) ──► Dense(128 → 7)
-                ```
-                - **Loss Function**: Inverse-frequency class-weighted CrossEntropyLoss:
-                  $$\\mathcal{L}_{CE} = - \\sum_{c=1}^C w_c \\cdot y_c \\log(\\hat{y}_c), \\quad w_c = \\frac{N}{C \\cdot N_c}$$
-                - **Result**: see the Results tab (`baseline_cnn` row).
+### 4. Grad-CAM
+For the predicted class $c$, the gradients of its score over the last convolutional block's activations $A^k$ give channel weights $\alpha_k^c = \frac{1}{Z}\sum_{i,j} \partial y^c / \partial A^k_{ij}$. The map $\mathrm{ReLU}(\sum_k \alpha_k^c A^k)$ is upsampled from 7×7 to 224×224 and drawn with the inferno colormap
 
-                ---
+### 5. Serving safeguards
+- **Calibration:** temperature scaling fitted on the validation set
+- **Out-of-distribution rejection:** Mahalanobis distance from the image's penultimate features to the nearest class mean (Ledoit-Wolf covariance), with a threshold set on validation lesions
+- **Inference:** ONNX Runtime behind a FastAPI service in Docker; this demo uses PyTorch so Grad-CAM can read gradients
 
-                ### Phase 2 — Two-Stage Transfer Learning (EfficientNet-B0)
-                We fine-tune **EfficientNet-B0** pre-trained on ImageNet (~4.7M parameters, compound scaling):
+### Stack
 
-                1. **Stage 1 (Head Fine-Tuning)**: Freeze feature extractor, train the last blocks and a custom head (`Dense(1280→512) → ReLU → Dense(512→7)`) at $lr = 10^{-3}$ for 3 epochs.
-                2. **Stage 2 (Full Fine-Tuning)**: Unfreeze all network parameters and train end-to-end at $lr = 10^{-4}$ with ReduceLROnPlateau.
-                - Checkpoints are selected on **validation balanced accuracy** (comparable across weighted and unweighted losses).
-
-                ---
-
-                ### Phase 3 — Conditional DCGAN for Synthetic Augmentation
-                We designed a **Conditional Deep Convolutional Generative Adversarial Network (cDCGAN)** to generate synthetic 224x224 dermatoscopic images for minority classes (`mel` and `df`).
-
-                - **Generator Architecture**:
-                  - Noise vector $z \\in \\mathbb{R}^{100}$ concatenated with Class Embedding $e \\in \\mathbb{R}^{10}$.
-                  - Dense projection to $512 \\times 7 \\times 7$.
-                  - 5 Transposed Convolutional Blocks (`ConvTranspose2d → BatchNorm → ReLU`) upsampling to $224 \\times 224 \\times 3$ with Tanh activation.
-                - **Discriminator Architecture**:
-                  - Image $X \\in \\mathbb{R}^{224 \\times 224 \\times 3}$ concatenated with spatial class embedding layer $\\in \\mathbb{R}^{224 \\times 224 \\times 1}$.
-                  - 5 Convolutional Blocks (`Conv2d → BatchNorm → LeakyReLU(0.2) → Dropout(0.3)`) downsampling to $7 \\times 7 \\times 512$.
-                  - Sigmoid classification head outputting Real/Fake probability.
-                - **Training Enhancements**:
-                  - One-sided label smoothing ($y_{real} = 0.9, y_{fake} = 0.1$) to prevent discriminator overconfidence.
-                  - Generates **3,000 synthetic images** (1,500 Melanoma, 1,500 Dermatofibroma), converted to pixels and passed through the same augmentation + normalization as real images.
-                  - Image quality measured with **FID / KID** against a real-vs-real reference.
-                - **Result**: see the Results tab (`dcgan` vs `weighted_loss` isolates the GAN's effect).
-
-                ---
-
-                ### Phase 4 — Grad-CAM Explainable AI (XAI)
-                To prevent "black-box" decisions in clinical settings, we implemented **Gradient-weighted Class Activation Mapping (Grad-CAM)**:
-
-                1. Compute gradient of score for class $c$ ($y^c$) with respect to feature activation maps $A^k$ of the final conv layer:
-                   $$\\alpha_k^c = \\frac{1}{Z} \\sum_{i} \\sum_{j} \\frac{\\partial y^c}{\\partial A_{i,j}^k}$$
-                2. Calculate weighted combination of forward activation maps and apply ReLU:
-                   $$L_{\\text{Grad-CAM}}^c = \\text{ReLU}\\left(\\sum_k \\alpha_k^c A^k\\right)$$
-                3. Upsample heatmap to $224 \\times 224$ and overlay with JET colormap.
-
-                ---
-
-                ## 💻 3. Technology Stack
-
-                | Category | Technology | Usage |
-                | :--- | :--- | :--- |
-                | **Core Framework** | PyTorch 2.13 | Tensor computations, Autograd, Model training |
-                | **Serving** | ONNX Runtime + FastAPI | CPU inference API (`api/main.py`), Docker image |
-                | **Vision Library** | torchvision 0.28.0 | EfficientNet-B0 pretrained weights, transforms |
-                | **Hardware Acceleration** | Apple Silicon MPS | GPU acceleration on Mac (`mps` device) |
-                | **Computer Vision** | PIL & OpenCV | Image resizing; Grad-CAM JET colormap overlays |
-                | **Data Processing** | Pandas & NumPy | Metadata, lesion-level stratified splits |
-                | **Metrics & Evaluation** | Scikit-Learn | AUROC, balanced accuracy, bootstrap CIs, Ledoit-Wolf OOD covariance |
-                | **Visualization** | Matplotlib & Seaborn | Loss curves, bar charts, confusion matrix plots |
-                | **Web Deployment** | Gradio 6.20.0 | Multi-tab UI, interactive image analysis |
-
-                """)
+| Area | Tools |
+| :--- | :--- |
+| Training | PyTorch 2.13, torchvision 0.28, Apple Silicon MPS |
+| Evaluation | scikit-learn (AUROC, balanced accuracy, Ledoit-Wolf), lesion-level bootstrap CIs |
+| Serving | ONNX Runtime, FastAPI, Docker |
+| Interface | Gradio 6.20, OpenCV for the Grad-CAM colormap |
+""", elem_classes="mx-prose", latex_delimiters=[{"left": "$$", "right": "$$", "display": True}, {"left": "$", "right": "$", "display": False}])
 
     return demo
 
@@ -546,4 +446,4 @@ def build_app():
 if __name__ == "__main__":
     demo = build_app()
     demo.launch(share=False, server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)),
-                max_file_size="10mb")
+                max_file_size="10mb", theme=THEME, css=CUSTOM_CSS, js=FORCE_LIGHT)

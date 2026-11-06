@@ -67,7 +67,7 @@ def parse_args():
 def to_input(cache, id_to_row, df):
     rows = [id_to_row[i] for i in df['image_id']]
     x = np.array(cache[rows], dtype=np.float32).transpose(0, 3, 1, 2) / 255.0
-    return ((x - MEAN) / STD).astype(np.float32)
+    return np.ascontiguousarray((x - MEAN) / STD, dtype=np.float32)
 
 
 @torch.no_grad()

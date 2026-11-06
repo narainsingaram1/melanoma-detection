@@ -13,8 +13,9 @@ def test_serving_preprocess_matches_training_pipeline():
     cached = np.asarray(img.convert('RGB').resize((224, 224), Image.BILINEAR))  # build_image_cache
     _, eval_tf = get_tensor_transforms()
     train_side = eval_tf(torch.from_numpy(cached.copy()).permute(2, 0, 1)).numpy()
-    serve_side = preprocess(img)[0]
-    np.testing.assert_allclose(serve_side, train_side, atol=1e-5)
+    serve = preprocess(img)
+    np.testing.assert_allclose(serve[0], train_side, atol=1e-5)
+    assert serve.flags['C_CONTIGUOUS']  # channels-last strides make PyTorch CPU ~4x slower
 
 
 def test_softmax_temperature_flattens():

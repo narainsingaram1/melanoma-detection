@@ -1,0 +1,192 @@
+{
+  "source_run": "results/ablation/plain/seed0",
+  "variant": "plain",
+  "seed": 0,
+  "architecture": "EfficientNet-B0",
+  "input": {
+    "size": [
+      224,
+      224
+    ],
+    "resize": "bilinear",
+    "mean": [
+      0.48500001430511475,
+      0.4560000002384186,
+      0.4059999883174896
+    ],
+    "std": [
+      0.2290000021457672,
+      0.2240000069141388,
+      0.22499999403953552
+    ]
+  },
+  "classes": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "vasc"
+  ],
+  "test_metrics_uncalibrated": {
+    "accuracy": 0.8262316910785619,
+    "balanced_accuracy": 0.7097258496170037,
+    "macro_f1": 0.7046600899727284,
+    "mel_recall": 0.5329341317365269,
+    "macro_auroc": 0.9608974710447384,
+    "mel_auroc": 0.9124627150193994,
+    "mel_sens_at_90spec": 0.7005988023952096
+  },
+  "calibration": {
+    "temperature": 1.4872052158064963,
+    "test_ece_before": 0.059665909500795124,
+    "test_ece_after": 0.01999256235067441,
+    "test_nll_before": 0.5246759057044983,
+    "test_nll_after": 0.4811434745788574
+  },
+  "ood": {
+    "threshold": 1784.383544921875,
+    "threshold_rule": "97.5th percentile of validation lesions",
+    "test_lesion_false_rejection_rate": 0.02729693741677763,
+    "sets": {
+      "uniform_noise": {
+        "n": 40,
+        "rejection_rate": 1.0
+      },
+      "solid_color": {
+        "n": 40,
+        "rejection_rate": 1.0
+      },
+      "gradient": {
+        "n": 40,
+        "rejection_rate": 1.0
+      },
+      "checkerboard": {
+        "n": 40,
+        "rejection_rate": 1.0
+      },
+      "natural_photos": {
+        "n": 39,
+        "rejection_rate": 0.9230769230769231
+      }
+    },
+    "sweep": [
+      {
+        "percentile": 90,
+        "threshold": 1398.99267578125,
+        "test_false_rejection": 0.09054593874833555,
+        "reject_uniform_noise": 1.0,
+        "reject_solid_color": 1.0,
+        "reject_gradient": 1.0,
+        "reject_checkerboard": 1.0,
+        "reject_natural_photos": 0.9487179487179487
+      },
+      {
+        "percentile": 95,
+        "threshold": 1588.0587158203125,
+        "test_false_rejection": 0.047936085219707054,
+        "reject_uniform_noise": 1.0,
+        "reject_solid_color": 1.0,
+        "reject_gradient": 1.0,
+        "reject_checkerboard": 1.0,
+        "reject_natural_photos": 0.9487179487179487
+      },
+      {
+        "percentile": 97.5,
+        "threshold": 1784.383544921875,
+        "test_false_rejection": 0.02729693741677763,
+        "reject_uniform_noise": 1.0,
+        "reject_solid_color": 1.0,
+        "reject_gradient": 1.0,
+        "reject_checkerboard": 1.0,
+        "reject_natural_photos": 0.9230769230769231
+      },
+      {
+        "percentile": 99,
+        "threshold": 2124.20556640625,
+        "test_false_rejection": 0.009986684420772303,
+        "reject_uniform_noise": 1.0,
+        "reject_solid_color": 1.0,
+        "reject_gradient": 1.0,
+        "reject_checkerboard": 1.0,
+        "reject_natural_photos": 0.7692307692307693
+      },
+      {
+        "percentile": 99.5,
+        "threshold": 2447.107421875,
+        "test_false_rejection": 0.003328894806924101,
+        "reject_uniform_noise": 1.0,
+        "reject_solid_color": 1.0,
+        "reject_gradient": 1.0,
+        "reject_checkerboard": 1.0,
+        "reject_natural_photos": 0.6923076923076923
+      }
+    ],
+    "auroc_test_lesions_vs_all_ood": 0.9977617782654953,
+    "max_softmax_baseline_auroc": 0.28714979692068865
+  },
+  "serving": {
+    "onnx_file": "classifier_fp32.onnx",
+    "int8_macro_auroc_drop": 0.03785869576205425,
+    "rule": "INT8 if macro-AUROC drop <= 0.01"
+  },
+  "engines": {
+    "pytorch_fp32": {
+      "size_mb": 18.95,
+      "test": {
+        "accuracy": 0.8262316910785619,
+        "balanced_accuracy": 0.7097258496170037,
+        "macro_f1": 0.7046600899727284,
+        "mel_recall": 0.5329341317365269,
+        "macro_auroc": 0.9611371134042823,
+        "mel_auroc": 0.9122249882257957,
+        "mel_sens_at_90spec": 0.7305389221556886
+      },
+      "latency_batch1": {
+        "p50_ms": 41.860375029500574,
+        "p95_ms": 44.394270807970315,
+        "mean_ms": 42.231417683069594,
+        "threads": 1
+      }
+    },
+    "onnx_fp32": {
+      "size_mb": 18.66,
+      "test": {
+        "accuracy": 0.8262316910785619,
+        "balanced_accuracy": 0.7097258496170037,
+        "macro_f1": 0.7046600899727284,
+        "mel_recall": 0.5329341317365269,
+        "macro_auroc": 0.9611371134042823,
+        "mel_auroc": 0.9122249882257957,
+        "mel_sens_at_90spec": 0.7305389221556886
+      },
+      "top1_agreement_with_pytorch": 1.0,
+      "latency_batch1": {
+        "p50_ms": 6.038604478817433,
+        "p95_ms": 7.786010426934805,
+        "mean_ms": 6.175755390431732
+      }
+    },
+    "onnx_int8": {
+      "size_mb": 5.47,
+      "test": {
+        "accuracy": 0.7310252996005326,
+        "balanced_accuracy": 0.48182673670268467,
+        "macro_f1": 0.5134121141901806,
+        "mel_recall": 0.5508982035928144,
+        "macro_auroc": 0.9232784176422281,
+        "mel_auroc": 0.8690887887147053,
+        "mel_sens_at_90spec": 0.592814371257485
+      },
+      "top1_agreement_with_pytorch": 0.7523302263648469,
+      "latency_batch1": {
+        "p50_ms": 4.646791494451463,
+        "p95_ms": 6.388389290077612,
+        "mean_ms": 4.914674768806435
+      }
+    }
+  },
+  "threads": 4,
+  "note": "Latency measured on the build machine CPU; re-run when idle for clean numbers."
+}
