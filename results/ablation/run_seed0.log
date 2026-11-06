@@ -1,0 +1,222 @@
+Building image cache (10015 images at 224x224) -> /Users/narainsingaram/Desktop/melanoma-detection-gan/data/cache/images_224.npy
+  cached 2000/10015
+  cached 4000/10015
+  cached 6000/10015
+  cached 8000/10015
+  cached 10000/10015
+Data split (lesion-level): Train=6981, Val=1532, Test=1502 images
+
+======================================================================
+plain | seed 0 | mps
+======================================================================
+Downloading: "https://download.pytorch.org/models/efficientnet_b0_rwightman-7f5810bc.pth" to /Users/narainsingaram/.cache/torch/hub/checkpoints/efficientnet_b0_rwightman-7f5810bc.pth
+  0%|          | 0.00/20.5M [00:00<?, ?B/s]  6%|▌         | 1.12M/20.5M [00:00<00:01, 11.7MB/s] 15%|█▌        | 3.12M/20.5M [00:00<00:01, 16.5MB/s] 23%|██▎       | 4.75M/20.5M [00:00<00:01, 16.4MB/s] 31%|███       | 6.38M/20.5M [00:00<00:00, 16.3MB/s] 39%|███▉      | 8.00M/20.5M [00:00<00:00, 16.5MB/s] 48%|████▊     | 9.75M/20.5M [00:00<00:00, 16.9MB/s] 56%|█████▌    | 11.4M/20.5M [00:00<00:00, 16.7MB/s] 64%|██████▍   | 13.1M/20.5M [00:00<00:00, 17.0MB/s] 72%|███████▏  | 14.8M/20.5M [00:00<00:00, 16.8MB/s] 81%|████████▏ | 16.6M/20.5M [00:01<00:00, 17.4MB/s] 90%|████████▉ | 18.4M/20.5M [00:01<00:00, 17.3MB/s] 98%|█████████▊| 20.1M/20.5M [00:01<00:00, 17.1MB/s]100%|██████████| 20.5M/20.5M [00:01<00:00, 16.8MB/s]
+  [head] ep 1: train_loss=0.8192 val_ce=0.7268 val_bal_acc=0.4867 val_auroc=0.9083 (63s)
+  [head] ep 2: train_loss=0.6775 val_ce=0.6902 val_bal_acc=0.4547 val_auroc=0.9184 (57s)
+  [head] ep 3: train_loss=0.6220 val_ce=0.6645 val_bal_acc=0.5268 val_auroc=0.9282 (57s)
+  [finetune] ep 4: train_loss=0.5206 val_ce=0.6047 val_bal_acc=0.5673 val_auroc=0.9414 (139s)
+  [finetune] ep 5: train_loss=0.4449 val_ce=0.5458 val_bal_acc=0.5837 val_auroc=0.9537 (127s)
+  [finetune] ep 6: train_loss=0.4023 val_ce=0.5165 val_bal_acc=0.5787 val_auroc=0.9602 (127s)
+  [finetune] ep 7: train_loss=0.3622 val_ce=0.5227 val_bal_acc=0.6118 val_auroc=0.9583 (338s)
+  [finetune] ep 8: train_loss=0.3296 val_ce=0.5029 val_bal_acc=0.6110 val_auroc=0.9619 (405s)
+  [finetune] ep 9: train_loss=0.3028 val_ce=0.5192 val_bal_acc=0.6480 val_auroc=0.9621 (396s)
+  [finetune] ep 10: train_loss=0.2681 val_ce=0.5715 val_bal_acc=0.6143 val_auroc=0.9585 (126s)
+  [finetune] ep 11: train_loss=0.2535 val_ce=0.5800 val_bal_acc=0.6118 val_auroc=0.9531 (311s)
+  [finetune] ep 12: train_loss=0.2213 val_ce=0.5872 val_bal_acc=0.6144 val_auroc=0.9601 (340s)
+  [finetune] ep 13: train_loss=0.2045 val_ce=0.5708 val_bal_acc=0.6274 val_auroc=0.9609 (136s)
+  [finetune] ep 14: train_loss=0.1841 val_ce=0.5719 val_bal_acc=0.6404 val_auroc=0.9598 (129s)
+  early stop (finetune)
+Confusion matrix saved to /Users/narainsingaram/Desktop/melanoma-detection-gan/results/ablation/plain/seed0/confusion_matrix.png
+  TEST: acc=0.8262 bal_acc=0.7097 macroF1=0.7047 AUROC=0.9609 mel_sens@90spec=0.7006 (46.1 min)
+
+======================================================================
+weighted_loss | seed 0 | mps
+======================================================================
+  [head] ep 1: train_loss=1.4095 val_ce=1.0594 val_bal_acc=0.5508 val_auroc=0.8802 (81s)
+  [head] ep 2: train_loss=1.1637 val_ce=1.0138 val_bal_acc=0.5712 val_auroc=0.9026 (69s)
+  [head] ep 3: train_loss=1.0303 val_ce=0.9734 val_bal_acc=0.5965 val_auroc=0.9049 (58s)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:301: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-3906-zfl9t6sh'}
+  warnings.warn(
+=== resumed Thu Nov  5 19:04:12 EST 2026 ===
+Data split (lesion-level): Train=6981, Val=1532, Test=1502 images
+skip plain/seed0 (done)
+
+======================================================================
+weighted_loss | seed 0 | mps
+======================================================================
+  [head] ep 1: train_loss=1.4095 val_ce=1.0594 val_bal_acc=0.5508 val_auroc=0.8802 (70s)
+  [head] ep 2: train_loss=1.1637 val_ce=1.0138 val_bal_acc=0.5712 val_auroc=0.9026 (63s)
+  [head] ep 3: train_loss=1.0303 val_ce=0.9734 val_bal_acc=0.5965 val_auroc=0.9049 (61s)
+  [finetune] ep 4: train_loss=0.8520 val_ce=0.9112 val_bal_acc=0.6026 val_auroc=0.9138 (148s)
+  [finetune] ep 5: train_loss=0.6975 val_ce=0.8071 val_bal_acc=0.6442 val_auroc=0.9346 (150s)
+  [finetune] ep 6: train_loss=0.6209 val_ce=0.7514 val_bal_acc=0.6548 val_auroc=0.9390 (144s)
+  [finetune] ep 7: train_loss=0.5936 val_ce=0.7658 val_bal_acc=0.6617 val_auroc=0.9354 (133s)
+  [finetune] ep 8: train_loss=0.5089 val_ce=0.7111 val_bal_acc=0.6711 val_auroc=0.9398 (139s)
+  [finetune] ep 9: train_loss=0.5125 val_ce=0.7569 val_bal_acc=0.6738 val_auroc=0.9427 (138s)
+  [finetune] ep 10: train_loss=0.4557 val_ce=0.6423 val_bal_acc=0.6652 val_auroc=0.9481 (138s)
+  [finetune] ep 11: train_loss=0.4365 val_ce=0.6563 val_bal_acc=0.7089 val_auroc=0.9491 (162s)
+  [finetune] ep 12: train_loss=0.3995 val_ce=0.7287 val_bal_acc=0.6662 val_auroc=0.9472 (146s)
+  [finetune] ep 13: train_loss=0.3777 val_ce=0.6188 val_bal_acc=0.7323 val_auroc=0.9585 (142s)
+  [finetune] ep 14: train_loss=0.3484 val_ce=0.7400 val_bal_acc=0.6985 val_auroc=0.9458 (136s)
+  [finetune] ep 15: train_loss=0.3294 val_ce=0.6741 val_bal_acc=0.6690 val_auroc=0.9488 (141s)
+  [finetune] ep 16: train_loss=0.2915 val_ce=0.6434 val_bal_acc=0.6546 val_auroc=0.9521 (141s)
+  [finetune] ep 17: train_loss=0.2623 val_ce=0.5881 val_bal_acc=0.6794 val_auroc=0.9583 (234s)
+  [finetune] ep 18: train_loss=0.2409 val_ce=0.6192 val_bal_acc=0.7029 val_auroc=0.9560 (154s)
+  early stop (finetune)
+Confusion matrix saved to /Users/narainsingaram/Desktop/melanoma-detection-gan/results/ablation/weighted_loss/seed0/confusion_matrix.png
+  TEST: acc=0.7670 bal_acc=0.7540 macroF1=0.6676 AUROC=0.9550 mel_sens@90spec=0.6766 (41.0 min)
+
+======================================================================
+oversample | seed 0 | mps
+======================================================================
+  [head] ep 1: train_loss=1.0380 val_ce=0.9150 val_bal_acc=0.5904 val_auroc=0.9073 (83s)
+  [head] ep 2: train_loss=0.7675 val_ce=0.8354 val_bal_acc=0.5653 val_auroc=0.9102 (63s)
+  [head] ep 3: train_loss=0.6814 val_ce=0.9589 val_bal_acc=0.5842 val_auroc=0.9101 (159s)
+  [finetune] ep 4: train_loss=0.5049 val_ce=0.7441 val_bal_acc=0.6551 val_auroc=0.9325 (448s)
+  [finetune] ep 5: train_loss=0.4134 val_ce=0.7383 val_bal_acc=0.6643 val_auroc=0.9378 (152s)
+  [finetune] ep 6: train_loss=0.3414 val_ce=0.6743 val_bal_acc=0.6771 val_auroc=0.9440 (328s)
+  [finetune] ep 7: train_loss=0.2996 val_ce=0.6953 val_bal_acc=0.6647 val_auroc=0.9420 (341s)
+  [finetune] ep 8: train_loss=0.2836 val_ce=0.6942 val_bal_acc=0.6817 val_auroc=0.9461 (398s)
+  [finetune] ep 9: train_loss=0.2374 val_ce=0.6573 val_bal_acc=0.6932 val_auroc=0.9453 (233s)
+  [finetune] ep 10: train_loss=0.2068 val_ce=0.7744 val_bal_acc=0.6717 val_auroc=0.9338 (127s)
+  [finetune] ep 11: train_loss=0.2162 val_ce=0.6633 val_bal_acc=0.6879 val_auroc=0.9474 (122s)
+  [finetune] ep 12: train_loss=0.1852 val_ce=0.6651 val_bal_acc=0.6475 val_auroc=0.9486 (262s)
+  [finetune] ep 13: train_loss=0.1531 val_ce=0.6773 val_bal_acc=0.6833 val_auroc=0.9475 (229s)
+  [finetune] ep 14: train_loss=0.1498 val_ce=0.6451 val_bal_acc=0.6971 val_auroc=0.9517 (1883s)
+  [finetune] ep 15: train_loss=0.1410 val_ce=0.6699 val_bal_acc=0.6691 val_auroc=0.9438 (1124s)
+  [finetune] ep 16: train_loss=0.1329 val_ce=0.6514 val_bal_acc=0.6797 val_auroc=0.9481 (727s)
+  [finetune] ep 17: train_loss=0.1194 val_ce=0.6634 val_bal_acc=0.7087 val_auroc=0.9500 (870s)
+  [finetune] ep 18: train_loss=0.1140 val_ce=0.6794 val_bal_acc=0.6808 val_auroc=0.9473 (378s)
+Confusion matrix saved to /Users/narainsingaram/Desktop/melanoma-detection-gan/results/ablation/oversample/seed0/confusion_matrix.png
+  TEST: acc=0.8129 bal_acc=0.7232 macroF1=0.7079 AUROC=0.9594 mel_sens@90spec=0.6647 (132.4 min)
+
+======================================================================
+dcgan | seed 0 | mps
+======================================================================
+  training DCGAN on 844 real rare-class images (['mel', 'df'])
+  GAN epoch 1/30: D=1.4052 G=4.7180
+  GAN epoch 2/30: D=1.8913 G=8.5730
+  GAN epoch 3/30: D=1.1136 G=5.4012
+  GAN epoch 4/30: D=0.8528 G=5.0692
+  GAN epoch 5/30: D=0.7936 G=4.1891
+  GAN epoch 6/30: D=0.7261 G=2.6232
+  GAN epoch 7/30: D=0.5668 G=1.7817
+  GAN epoch 8/30: D=0.6298 G=3.1541
+  GAN epoch 9/30: D=0.6516 G=2.5298
+  GAN epoch 10/30: D=0.6206 G=2.5461
+  GAN epoch 11/30: D=0.6028 G=2.0928
+  GAN epoch 12/30: D=0.6370 G=2.1082
+  GAN epoch 13/30: D=0.6780 G=2.1039
+  GAN epoch 14/30: D=0.6619 G=2.5027
+  GAN epoch 15/30: D=0.7040 G=2.0091
+  GAN epoch 16/30: D=0.6038 G=1.4689
+  GAN epoch 17/30: D=0.6657 G=1.8223
+  GAN epoch 18/30: D=0.6219 G=1.7413
+  GAN epoch 19/30: D=0.6424 G=1.5977
+  GAN epoch 20/30: D=0.6560 G=1.5240
+  GAN epoch 21/30: D=0.6423 G=1.5901
+  GAN epoch 22/30: D=0.6193 G=1.4775
+  GAN epoch 23/30: D=0.6300 G=1.6160
+  GAN epoch 24/30: D=0.7438 G=1.2042
+  GAN epoch 25/30: D=0.6996 G=1.2559
+  GAN epoch 26/30: D=0.7410 G=1.3437
+  GAN epoch 27/30: D=0.7138 G=1.2522
+  GAN epoch 28/30: D=0.6983 G=1.1439
+  GAN epoch 29/30: D=0.6972 G=1.1054
+  GAN epoch 30/30: D=0.6936 G=1.1089
+Downloading: "https://download.pytorch.org/models/inception_v3_google-0cc3c7bd.pth" to /Users/narainsingaram/.cache/torch/hub/checkpoints/inception_v3_google-0cc3c7bd.pth
+Python(22323) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+  0%|          | 0.00/104M [00:00<?, ?B/s]  5%|▌         | 5.50M/104M [00:00<00:01, 56.7MB/s] 11%|█         | 11.0M/104M [00:00<00:01, 50.9MB/s] 15%|█▌        | 16.0M/104M [00:00<00:01, 50.8MB/s] 20%|██        | 20.9M/104M [00:00<00:01, 47.6MB/s] 25%|██▍       | 25.8M/104M [00:00<00:01, 48.7MB/s] 29%|██▉       | 30.5M/104M [00:00<00:01, 47.9MB/s] 34%|███▍      | 35.2M/104M [00:00<00:01, 48.1MB/s] 38%|███▊      | 39.9M/104M [00:00<00:01, 48.0MB/s] 43%|████▎     | 44.9M/104M [00:00<00:01, 49.2MB/s] 48%|████▊     | 49.6M/104M [00:01<00:01, 48.5MB/s] 52%|█████▏    | 54.4M/104M [00:01<00:01, 46.7MB/s] 57%|█████▋    | 59.0M/104M [00:01<00:01, 47.0MB/s] 61%|██████    | 63.6M/104M [00:01<00:00, 47.0MB/s] 66%|██████▌   | 68.4M/104M [00:01<00:00, 47.6MB/s] 70%|███████   | 73.2M/104M [00:01<00:00, 48.3MB/s] 75%|███████▍  | 77.9M/104M [00:01<00:00, 47.8MB/s] 79%|███████▉  | 82.5M/104M [00:01<00:00, 46.6MB/s] 84%|████████▍ | 87.1M/104M [00:01<00:00, 46.8MB/s] 89%|████████▊ | 92.1M/104M [00:02<00:00, 48.2MB/s] 93%|█████████▎| 96.9M/104M [00:02<00:00, 48.1MB/s] 98%|█████████▊| 102M/104M [00:02<00:00, 49.0MB/s] 100%|██████████| 104M/104M [00:02<00:00, 48.3MB/s]
+  mel: FID syn=349.0 (real-ref 68.1) | KID syn=0.3608 (real-ref 0.0006)
+  df: FID syn=369.6 (real-ref 152.8) | KID syn=0.3427 (real-ref 0.0120)
+  [head] ep 1: train_loss=0.4845 val_ce=1.5589 val_bal_acc=0.5480 val_auroc=0.8589 (562s)
+  [head] ep 2: train_loss=0.3599 val_ce=1.0352 val_bal_acc=0.5223 val_auroc=0.8735 (192s)
+  [head] ep 3: train_loss=0.3371 val_ce=0.9157 val_bal_acc=0.5994 val_auroc=0.9090 (635s)
+  [finetune] ep 4: train_loss=0.2500 val_ce=1.0130 val_bal_acc=0.6147 val_auroc=0.9090 (631s)
+  [finetune] ep 5: train_loss=0.1982 val_ce=0.8100 val_bal_acc=0.6928 val_auroc=0.9386 (1710s)
+  [finetune] ep 6: train_loss=0.1712 val_ce=0.9322 val_bal_acc=0.6534 val_auroc=0.9241 (3257s)
+  [finetune] ep 7: train_loss=0.1659 val_ce=0.7335 val_bal_acc=0.6951 val_auroc=0.9467 (1783s)
+  [finetune] ep 8: train_loss=0.1490 val_ce=0.7200 val_bal_acc=0.6874 val_auroc=0.9459 (3988s)
+  [finetune] ep 9: train_loss=0.1340 val_ce=0.6844 val_bal_acc=0.7064 val_auroc=0.9527 (676s)
+  [finetune] ep 10: train_loss=0.1229 val_ce=0.7698 val_bal_acc=0.6822 val_auroc=0.9459 (384s)
+  [finetune] ep 11: train_loss=0.1185 val_ce=0.7553 val_bal_acc=0.6762 val_auroc=0.9435 (170s)
+  [finetune] ep 12: train_loss=0.1077 val_ce=0.7125 val_bal_acc=0.6825 val_auroc=0.9510 (166s)
+  [finetune] ep 13: train_loss=0.0874 val_ce=0.6565 val_bal_acc=0.7121 val_auroc=0.9529 (169s)
+  [finetune] ep 14: train_loss=0.0842 val_ce=0.7054 val_bal_acc=0.7092 val_auroc=0.9507 (172s)
+  [finetune] ep 15: train_loss=0.0824 val_ce=0.7246 val_bal_acc=0.7001 val_auroc=0.9488 (174s)
+  [finetune] ep 16: train_loss=0.0856 val_ce=0.6935 val_bal_acc=0.6854 val_auroc=0.9536 (177s)
+  [finetune] ep 17: train_loss=0.0699 val_ce=0.6792 val_bal_acc=0.6738 val_auroc=0.9519 (171s)
+  [finetune] ep 18: train_loss=0.0691 val_ce=0.6747 val_bal_acc=0.6798 val_auroc=0.9538 (175s)
+  early stop (finetune)
+Confusion matrix saved to /Users/narainsingaram/Desktop/melanoma-detection-gan/results/ablation/dcgan/seed0/confusion_matrix.png
+  TEST: acc=0.7683 bal_acc=0.8045 macroF1=0.6946 AUROC=0.9558 mel_sens@90spec=0.6527 (318.8 min)
+
+======================================================================
+baseline_cnn | seed 0 | mps
+======================================================================
+  [cnn] ep 1: train_loss=1.8620 val_ce=1.5913 val_bal_acc=0.2667 val_auroc=0.6909 (103s)
+  [cnn] ep 2: train_loss=1.7855 val_ce=1.3951 val_bal_acc=0.3314 val_auroc=0.7844 (94s)
+  [cnn] ep 3: train_loss=1.7926 val_ce=1.3720 val_bal_acc=0.3331 val_auroc=0.7855 (120s)
+  [cnn] ep 4: train_loss=1.7587 val_ce=1.5382 val_bal_acc=0.3292 val_auroc=0.7512 (109s)
+  [cnn] ep 5: train_loss=1.7552 val_ce=1.4670 val_bal_acc=0.3008 val_auroc=0.7567 (112s)
+  [cnn] ep 6: train_loss=1.7351 val_ce=1.4523 val_bal_acc=0.3478 val_auroc=0.7673 (115s)
+  [cnn] ep 7: train_loss=1.7261 val_ce=1.3848 val_bal_acc=0.3450 val_auroc=0.7799 (118s)
+  [cnn] ep 8: train_loss=1.7307 val_ce=1.4525 val_bal_acc=0.3475 val_auroc=0.7464 (148s)
+  [cnn] ep 9: train_loss=1.7354 val_ce=1.4895 val_bal_acc=0.3088 val_auroc=0.7309 (136s)
+  [cnn] ep 10: train_loss=1.7111 val_ce=1.2424 val_bal_acc=0.3405 val_auroc=0.7965 (116s)
+  [cnn] ep 11: train_loss=1.7056 val_ce=1.3384 val_bal_acc=0.3790 val_auroc=0.7934 (115s)
+  [cnn] ep 12: train_loss=1.7002 val_ce=1.3385 val_bal_acc=0.3810 val_auroc=0.7972 (124s)
+  [cnn] ep 13: train_loss=1.6831 val_ce=1.3339 val_bal_acc=0.3846 val_auroc=0.7997 (115s)
+  [cnn] ep 14: train_loss=1.6879 val_ce=1.4059 val_bal_acc=0.3664 val_auroc=0.7972 (129s)
+  [cnn] ep 15: train_loss=1.6828 val_ce=1.3123 val_bal_acc=0.3641 val_auroc=0.8027 (151s)
+  [cnn] ep 16: train_loss=1.6827 val_ce=1.3433 val_bal_acc=0.3765 val_auroc=0.8023 (158s)
+  [cnn] ep 17: train_loss=1.6659 val_ce=1.3124 val_bal_acc=0.4000 val_auroc=0.7968 (114s)
+  [cnn] ep 18: train_loss=1.6466 val_ce=1.3685 val_bal_acc=0.3752 val_auroc=0.8033 (107s)
+  [cnn] ep 19: train_loss=1.6386 val_ce=1.3869 val_bal_acc=0.3915 val_auroc=0.8058 (107s)
+  [cnn] ep 20: train_loss=1.6253 val_ce=1.3075 val_bal_acc=0.3843 val_auroc=0.8082 (98s)
+  [cnn] ep 21: train_loss=1.6472 val_ce=1.3159 val_bal_acc=0.3880 val_auroc=0.8136 (105s)
+  [cnn] ep 22: train_loss=1.5974 val_ce=1.2665 val_bal_acc=0.3872 val_auroc=0.8175 (118s)
+  early stop (cnn)
+Confusion matrix saved to /Users/narainsingaram/Desktop/melanoma-detection-gan/results/ablation/baseline_cnn/seed0/confusion_matrix.png
+  TEST: acc=0.4933 bal_acc=0.3359 macroF1=0.2822 AUROC=0.8133 mel_sens@90spec=0.3832 (43.7 min)
+
+# Ablation results (lesion-level split, test set)
+
+Mean ± sample std across training seeds; split seed fixed at 42.
+
+| Variant | Seeds | Accuracy | Balanced acc | Macro F1 | Macro AUROC | Mel AUROC | Mel recall | Mel sens @90% spec |
+|---|---|---|---|---|---|---|---|---|
+| baseline_cnn | 1 | 0.493 | 0.336 | 0.282 | 0.813 | 0.799 | 0.713 | 0.383 |
+| plain | 1 | 0.826 | 0.710 | 0.705 | 0.961 | 0.912 | 0.533 | 0.701 |
+| weighted_loss | 1 | 0.767 | 0.754 | 0.668 | 0.955 | 0.892 | 0.683 | 0.677 |
+| oversample | 1 | 0.813 | 0.723 | 0.708 | 0.959 | 0.900 | 0.563 | 0.665 |
+| dcgan | 1 | 0.768 | 0.804 | 0.695 | 0.956 | 0.886 | 0.629 | 0.653 |
+
+## Paired difference vs `weighted_loss` (same seed)
+
+| Variant | Seeds | Accuracy | Balanced acc | Macro F1 | Macro AUROC | Mel AUROC | Mel recall | Mel sens @90% spec |
+|---|---|---|---|---|---|---|---|---|
+| baseline_cnn | 1 | -0.274 | -0.418 | -0.385 | -0.142 | -0.094 | +0.030 | -0.293 |
+| plain | 1 | +0.059 | -0.044 | +0.037 | +0.006 | +0.020 | -0.150 | +0.024 |
+| oversample | 1 | +0.046 | -0.031 | +0.040 | +0.004 | +0.007 | -0.120 | -0.012 |
+| dcgan | 1 | +0.001 | +0.050 | +0.027 | +0.001 | -0.006 | -0.054 | -0.024 |
+
+## Per-run 95% CI (lesion-level bootstrap)
+
+| Variant | Seed | Balanced acc | Macro AUROC | Mel sens @90% spec |
+|---|---|---|---|---|
+| baseline_cnn | 0 | 0.336 [0.299, 0.380] | 0.813 [0.788, 0.837] | 0.383 [0.278, 0.547] |
+| plain | 0 | 0.710 [0.657, 0.766] | 0.961 [0.952, 0.969] | 0.701 [0.619, 0.813] |
+| weighted_loss | 0 | 0.754 [0.703, 0.803] | 0.955 [0.946, 0.964] | 0.677 [0.585, 0.755] |
+| oversample | 0 | 0.723 [0.668, 0.775] | 0.959 [0.951, 0.968] | 0.665 [0.580, 0.760] |
+| dcgan | 0 | 0.804 [0.764, 0.842] | 0.956 [0.947, 0.963] | 0.653 [0.558, 0.740] |
+
+## Synthetic image quality (Inception-v3 features, lower is better)
+
+The real-vs-real row (val vs train images of the same class) is the floor a perfect generator would reach.
+
+| Seed | Class | n real train | FID syn | FID real-ref | KID syn | KID real-ref |
+|---|---|---|---|---|---|---|
+| 0 | mel | 773 | 349.0 | 68.1 | 0.3608 | 0.0006 |
+| 0 | df | 71 | 369.6 | 152.8 | 0.3427 | 0.0120 |
+
