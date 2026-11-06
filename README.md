@@ -1,5 +1,7 @@
 # 🔬 Melanoma Detection with GAN-Based Class Balancing
 
+[![CI](https://github.com/narainsingaram1/melanoma-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/narainsingaram1/melanoma-detection/actions/workflows/ci.yml)
+
 A complete deep learning pipeline for skin cancer classification using the **HAM10000** dataset, featuring a custom CNN baseline, transfer learning with EfficientNet-B0, GAN-based synthetic data augmentation for rare class balancing, and Grad-CAM explainability.
 
 ## 📋 Table of Contents
