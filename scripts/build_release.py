@@ -250,8 +250,17 @@ def main():
                 for n, p in (('onnx_fp32', fp32), ('onnx_int8', int8))}
     torch_pred = lg_test.argmax(1)
     engines = {'pytorch_fp32': {'size_mb': mb(pth_path), 'test': compute_metrics(y_test, p_cal)}}
-    with torch.no_grad():
-        engines['pytorch_fp32']['latency_batch1'] = latency(lambda x: model(torch.from_numpy(x)), x_test[:1])
+    # PyTorch CPU gets *slower* with more intra-op threads on macOS at batch 1, so report its
+    # best thread count (fair baseline for the ONNX Runtime comparison).
+    best = None
+    for th in sorted({1, args.threads}):
+        torch.set_num_threads(th)
+        with torch.inference_mode():
+            lat = latency(lambda x: model(torch.from_numpy(x)), x_test[:1])
+        if best is None or lat['p50_ms'] < best['p50_ms']:
+            best = {**lat, 'threads': th}
+    engines['pytorch_fp32']['latency_batch1'] = best
+    torch.set_num_threads(args.threads)
     for n, sess in sessions.items():
         lg, _ = ort_forward(sess, x_test)
         engines[n] = {'size_mb': mb(fp32 if n == 'onnx_fp32' else int8),
