@@ -19,82 +19,66 @@ import gradio as gr
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
-from src.utils import get_device, CLASSES, CLASS_NAMES, IMG_SIZE
-from src.transfer_model import SkinLesionTransfer
+from src.constants import CLASSES, CLASS_NAMES, IMG_SIZE
 from src.gradcam import GradCAM, get_target_layer
+from src.inference import TorchLesionClassifier, ensure_model_dir
 
-# Global model and device
-device = get_device()
-model = None
+# CPU by default (HF Spaces free tier); set APP_DEVICE=mps/cuda locally if wanted
+device = torch.device(os.environ.get('APP_DEVICE', 'cpu'))
+clf = None
 gradcam_instance = None
+DISCLAIMER = ("Research demo, not a medical device. Do not use it for diagnosis; "
+              "see a dermatologist about any concerning skin lesion. Uploaded images are not stored.")
+
+
+def _load_json(*parts):
+    path = os.path.join(project_root, *parts)
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
 
 
 def load_model():
-    """Load the best available model."""
-    global model, gradcam_instance
-
-    model_paths = [
-        ('results/best_gan_augmented.pth', 'GAN-Augmented EfficientNet-B0 Model'),
-        ('results/best_transfer.pth', 'Transfer Learning (EfficientNet-B0) Model'),
-    ]
-
-    for path, name in model_paths:
-        if os.path.exists(os.path.join(project_root, path)):
-            full_path = os.path.join(project_root, path)
-            print(f"Loading {name} from {full_path}...")
-            model = SkinLesionTransfer(num_classes=7).to(device)
-            model.load_state_dict(
-                torch.load(full_path, map_location=device, weights_only=True)
-            )
-            model.eval()
-
-            # Set up Grad-CAM
-            target_layer = get_target_layer(model, 'transfer')
-            gradcam_instance = GradCAM(model, target_layer)
-
-            print(f"Model loaded successfully on {device}")
-            return name
-
-    print("Warning: Trained model weights not found.")
-    return "Demo Mode (Weights Not Loaded)"
-
-
-# Transform for input images
-eval_transform = transforms.Compose([
-    transforms.Resize((IMG_SIZE, IMG_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
+    """Load the release model (models/, or HF_MODEL_REPO) for inference + Grad-CAM."""
+    global clf, gradcam_instance
+    try:
+        clf = TorchLesionClassifier(ensure_model_dir(), device=str(device))
+    except FileNotFoundError as e:
+        print(f"Warning: {e}")
+        return "Demo Mode (weights not loaded)"
+    gradcam_instance = GradCAM(clf.model, get_target_layer(clf.model, 'transfer'))
+    info = clf.post.info
+    print(f"Loaded {info['variant']} (seed {info['seed']}) on {device}")
+    return f"EfficientNet-B0 ({info['variant']}, seed {info['seed']})"
 
 
 def predict(image):
-    """
-    Run diagnostic prediction & Grad-CAM explainability on uploaded lesion image.
-    """
+    """Calibrated prediction + out-of-distribution check + Grad-CAM for one uploaded image."""
     if image is None:
         return "⚠️ Please upload or select a skin lesion image.", {}, None
+    if clf is None:
+        return "⚠️ Model weights not available. Run scripts/build_release.py or set HF_MODEL_REPO.", {}, None
 
-    if model is None:
-        return "⚠️ Model weights not available. Please run training pipeline.", {}, None
+    try:
+        res = clf.predict(image)
+    except ValueError:
+        return "⚠️ Image is too large. Please upload a smaller photo.", {}, None
 
-    # Preprocess
-    img_tensor = eval_transform(image).unsqueeze(0).to(device)
+    if not res['in_distribution']:
+        return f"""
+        <div style="background: rgba(17, 24, 39, 0.8); border: 1px solid #f59e0b; border-radius: 12px; padding: 18px;">
+            <div style="font-size: 18px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">Image rejected: not a dermoscopic lesion</div>
+            <div style="color: #d1d5db;">This image is far from anything the model was trained on
+            (OOD score {res['ood_score']:.0f} &gt; threshold {res['ood_threshold']:.0f}), so no prediction is shown.
+            Upload a close-up dermoscopy image of a single skin lesion.</div>
+        </div>""", {}, None
 
-    # Inference
-    with torch.no_grad():
-        output = model(img_tensor)
-        probabilities = torch.softmax(output, dim=1)[0]
-
-    pred_idx = torch.argmax(probabilities).item()
-    pred_code = CLASSES[pred_idx]
+    pred_code = res['prediction']['code']
+    pred_idx = CLASSES.index(pred_code)
     pred_name = CLASS_NAMES[pred_code]
-    pred_confidence = float(probabilities[pred_idx])
-
-    # Format probability dictionary
-    confidences = {}
-    for i, cls in enumerate(CLASSES):
-        name_str = f"{CLASS_NAMES[cls]} ({cls})"
-        confidences[name_str] = float(probabilities[i])
+    pred_confidence = res['prediction']['probability']
+    confidences = {f"{CLASS_NAMES[c]} ({c})": p for c, p in res['probabilities'].items()}
 
     # Risk badge formatting
     risk_color = "#ef4444" if pred_code in ['mel', 'bcc', 'akiec'] else "#10b981"
@@ -110,13 +94,14 @@ def predict(image):
             {pred_name} <span style="font-size: 18px; font-weight: 500; color: #a78bfa;">({pred_code.upper()})</span>
         </div>
         <div style="font-size: 15px; color: #d1d5db;">
-            Model Confidence: <strong style="color: #38bdf8; font-size: 18px;">{pred_confidence:.2%}</strong>
+            Calibrated probability: <strong style="color: #38bdf8; font-size: 18px;">{pred_confidence:.2%}</strong>
         </div>
+        <div style="font-size: 12px; color: #9ca3af; margin-top: 8px;">{DISCLAIMER}</div>
     </div>
     """
 
     # Generate Grad-CAM
-    heatmap, _, _ = gradcam_instance.generate_cam(img_tensor, target_class=pred_idx)
+    heatmap, _, _ = gradcam_instance.generate_cam(clf.tensor(image), target_class=pred_idx)
     fig = create_gradcam_figure(image, heatmap, pred_idx, pred_confidence)
 
     return summary_html, confidences, fig
@@ -160,10 +145,10 @@ def create_gradcam_figure(original_image, heatmap, pred_class, confidence):
 
 # Helper to get sample image paths
 def get_sample_images():
-    sample_dir = os.path.join(project_root, 'data', 'ham10000', 'HAM10000_images_part_1')
-    if os.path.exists(sample_dir):
-        files = sorted(os.listdir(sample_dir))[:6]
-        return [os.path.join(sample_dir, f) for f in files if f.endswith('.jpg')]
+    """One held-out test image per class (HAM10000, CC BY-NC 4.0; see assets/samples/NOTICE.md)."""
+    sample_dir = os.path.join(project_root, 'assets', 'samples')
+    if os.path.isdir(sample_dir):
+        return [os.path.join(sample_dir, f) for f in sorted(os.listdir(sample_dir)) if f.endswith('.jpg')]
     return []
 
 
@@ -316,6 +301,40 @@ CUSTOM_CSS = """
 """
 
 
+def results_markdown():
+    """Results tab content, generated from committed result files (never hard-coded)."""
+    out = ["## 📈 Results (lesion-level split, held-out test set)"]
+    leak = _load_json('results', 'leakage_report.json')
+    if leak:
+        v1 = leak['v1_image_split']
+        out.append(f"**Data leakage fixed:** the original image-level split had "
+                   f"**{v1['test_images_whose_lesion_is_in_train']} of {v1['test_images']} test images "
+                   f"({v1['pct_test_images_leaked']}%)** sharing a lesion with training. "
+                   f"All numbers below use a lesion-level split with 0 overlap.")
+    summary = os.path.join(project_root, 'results', 'ablation', 'summary.md')
+    if os.path.exists(summary):
+        with open(summary) as f:
+            out.append(f.read().replace('# Ablation results', '### Imbalance-strategy ablation', 1))
+    info = clf.post.info if clf else _load_json('models', 'model_info.json')
+    if info:
+        c, o = info['calibration'], info['ood']
+        out.append("### Deployed model")
+        out.append(f"- **Model:** EfficientNet-B0, `{info['variant']}` variant, seed {info['seed']}")
+        out.append(f"- **Calibration:** temperature scaling (T = {c['temperature']:.2f}), "
+                   f"expected calibration error {c['test_ece_before']:.3f} → {c['test_ece_after']:.3f}")
+        sets = ', '.join(f"{k.replace('_', ' ')} {v['rejection_rate']:.0%}" for k, v in o['sets'].items())
+        out.append(f"- **Out-of-distribution rejection** (Mahalanobis on penultimate features): "
+                   f"rejects {sets}; wrongly rejects {o['test_lesion_false_rejection_rate']:.1%} of real test lesions")
+        e = info.get('engines', {})
+        if e:
+            rows = ["| Engine | Size (MB) | Test accuracy | Macro AUROC | CPU p50 latency (ms) |", "|---|---|---|---|---|"]
+            for n, v in e.items():
+                rows.append(f"| {n} | {v['size_mb']} | {v['test']['accuracy']:.3f} | {v['test']['macro_auroc']:.3f} | "
+                            f"{v['latency_batch1']['p50_ms']:.1f} |")
+            out.append("\n".join(rows))
+    return "\n\n".join(out)
+
+
 def build_app():
     """Build the multi-tab Gradio UI."""
     active_model_name = load_model()
@@ -332,9 +351,11 @@ def build_app():
             </p>
             <div class="badge-container">
                 <span class="badge badge-green">● Active Model: {active_model_name}</span>
-                <span class="badge">Hardware: Apple Silicon GPU ({device})</span>
-                <span class="badge">Dataset: HAM10000 (10,015 images)</span>
-                <span class="badge">Framework: PyTorch 2.8 + EfficientNet-B0</span>
+                <span class="badge">Inference: {str(device).upper()}</span>
+                <span class="badge">Dataset: HAM10000 (10,015 images, 7,470 lesions)</span>
+                <span class="badge">Framework: PyTorch {torch.__version__.split('+')[0]} + EfficientNet-B0</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 13px; color: #fbbf24;">⚠️ {DISCLAIMER}
             </div>
         </div>
         """)
@@ -415,72 +436,7 @@ def build_app():
             # ==========================================
             with gr.TabItem("📊 Empirical Results & Model Comparison"):
 
-                gr.Markdown("## 📈 Benchmark Metrics & GAN Impact Analysis")
-
-                # KPI Grid
-                gr.HTML("""
-                <div class="kpi-grid">
-                    <div class="kpi-card">
-                        <div class="kpi-value">77.58%</div>
-                        <div class="kpi-label">Final Classifier Accuracy</div>
-                        <div class="kpi-sub">▲ +32.67% vs Baseline</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-value">0.6824</div>
-                        <div class="kpi-label">Macro F1-Score</div>
-                        <div class="kpi-sub">▲ +35.02% vs Baseline</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-value">82.35%</div>
-                        <div class="kpi-label">Dermatofibroma Recall</div>
-                        <div class="kpi-sub">▲ +70.59% via GAN Augment</div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-value">10,010</div>
-                        <div class="kpi-label">Balanced Dataset Size</div>
-                        <div class="kpi-sub">3,000 Synthetic Images</div>
-                    </div>
-                </div>
-                """)
-
-                with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("### 📊 Recall Comparison Across All 3 Models")
-                        comp_img_path = os.path.join(project_root, 'results', 'model_comparison.png')
-                        if os.path.exists(comp_img_path):
-                            gr.Image(comp_img_path, label="Model Comparison (Recall & F1 per Class)")
-                        else:
-                            gr.Markdown("Run `python run_all.py` to generate plots.")
-
-                    with gr.Column():
-                        gr.Markdown("### 🎨 DCGAN Training Loss & Convergence")
-                        gan_loss_path = os.path.join(project_root, 'results', 'gan_loss_curves.png')
-                        if os.path.exists(gan_loss_path):
-                            gr.Image(gan_loss_path, label="Conditional DCGAN Loss Curves")
-                        else:
-                            gr.Markdown("Run `python run_all.py` to generate plots.")
-
-                gr.Markdown("---")
-                gr.Markdown("### 🧩 Confusion Matrices Across Phases")
-                with gr.Row():
-                    cm1 = os.path.join(project_root, 'results', 'baseline_confusion_matrix.png')
-                    cm2 = os.path.join(project_root, 'results', 'transfer_confusion_matrix.png')
-                    cm3 = os.path.join(project_root, 'results', 'gan_augmented_confusion_matrix.png')
-
-                    if os.path.exists(cm1):
-                        gr.Image(cm1, label="Phase 1: Baseline CNN")
-                    if os.path.exists(cm2):
-                        gr.Image(cm2, label="Phase 2: EfficientNet-B0")
-                    if os.path.exists(cm3):
-                        gr.Image(cm3, label="Phase 3: GAN-Augmented")
-
-                gr.Markdown("---")
-                gr.Markdown("### 📄 Final Metrics Summary (JSON Output)")
-                summary_json_path = os.path.join(project_root, 'results', 'final_summary.json')
-                if os.path.exists(summary_json_path):
-                    with open(summary_json_path) as f:
-                        summary_data = json.load(f)
-                    gr.JSON(summary_data, label="Results JSON Summary")
+                gr.Markdown(results_markdown())
 
             # ==========================================
             # TAB 3: TECHNICAL DEEP-DIVE & ARCHITECTURE
@@ -490,7 +446,7 @@ def build_app():
                 gr.Markdown("""
                 # 🛠 Deep Learning Architecture & Pipeline Deep-Dive
 
-                This section details every phase of the engineering pipeline, mathematical formulation, model specifications, and portfolio talking points.
+                This section details every phase of the engineering pipeline, mathematical formulation, and model specifications.
 
                 ---
 
@@ -499,8 +455,9 @@ def build_app():
                 Skin cancer classification models face a fundamental failure mode in real-world deployment: **severe class imbalance**.
                 In the **HAM10000** dataset (10,015 dermatoscopic images), benign Melanocytic Nevi (`nv`) account for **67% of all samples**, while dangerous malignancies like **Melanoma (`mel`)** and rare lesions like **Dermatofibroma (`df`)** represent small fractions of the dataset.
 
-                - **Failure Mode**: A standard Convolutional Neural Network trained on imbalanced data optimizes for global accuracy by predicting the majority class (`nv`), achieving ~70% overall accuracy while **failing to detect 80%+ of cancer cases**.
-                - **Engineering Objective**: Fix class imbalance using a **Conditional DCGAN** to synthesize realistic minority class images, balancing the training set and maximizing **Melanoma Recall** without sacrificing overall specificity.
+                - **Failure Mode**: A standard Convolutional Neural Network trained on imbalanced data optimizes for global accuracy by predicting the majority class (`nv`), looking accurate overall while missing many of the cancers that matter most.
+                - **Engineering Objective**: Compare imbalance strategies (class-weighted loss, oversampling, and **Conditional DCGAN** synthetic images) under one controlled recipe, judged on balanced accuracy, AUROC, and melanoma sensitivity.
+                - **Leakage-free evaluation**: HAM10000 has ~10k images of 7,470 lesions. A naive image-level split put photos of the same lesion in train and test (36% of test images in the original version of this project). All results here use a **lesion-level split**.
 
                 ---
 
@@ -524,16 +481,16 @@ def build_app():
                 ```
                 - **Loss Function**: Inverse-frequency class-weighted CrossEntropyLoss:
                   $$\\mathcal{L}_{CE} = - \\sum_{c=1}^C w_c \\cdot y_c \\log(\\hat{y}_c), \\quad w_c = \\frac{N}{C \\cdot N_c}$$
-                - **Baseline Result**: Accuracy = **44.91%**, F1 = **0.3322**, Melanoma Recall = **73.05%**.
+                - **Result**: see the Results tab (`baseline_cnn` row).
 
                 ---
 
                 ### Phase 2 — Two-Stage Transfer Learning (EfficientNet-B0)
-                We leveraged **EfficientNet-B0** pre-trained on ImageNet (20M+ parameters) using compound scaling:
+                We fine-tune **EfficientNet-B0** pre-trained on ImageNet (~4.7M parameters, compound scaling):
 
-                1. **Stage 1 (Head Fine-Tuning)**: Freeze feature extractor, train custom classification head (`Dense(1280→512) → ReLU → Dense(512→7)`) at $lr = 10^{-3}$ for 8 epochs.
+                1. **Stage 1 (Head Fine-Tuning)**: Freeze feature extractor, train the last blocks and a custom head (`Dense(1280→512) → ReLU → Dense(512→7)`) at $lr = 10^{-3}$ for 3 epochs.
                 2. **Stage 2 (Full Fine-Tuning)**: Unfreeze all network parameters and train end-to-end at $lr = 10^{-4}$ with ReduceLROnPlateau.
-                - **Result**: Accuracy jumped from **44.91% → 71.92%**, Macro F1 from **0.3322 → 0.6557**.
+                - Checkpoints are selected on **validation balanced accuracy** (comparable across weighted and unweighted losses).
 
                 ---
 
@@ -550,8 +507,9 @@ def build_app():
                   - Sigmoid classification head outputting Real/Fake probability.
                 - **Training Enhancements**:
                   - One-sided label smoothing ($y_{real} = 0.9, y_{fake} = 0.1$) to prevent discriminator overconfidence.
-                  - Generated **3,000 synthetic images** (1,500 Melanoma, 1,500 Dermatofibroma) expanding dataset from **7,010 → 10,010 images**.
-                - **Result**: Final Retrained Classifier Accuracy reached **77.58%** (+32.67% over baseline), and Dermatofibroma Recall jumped from **11.76% → 82.35%** (+70.59% improvement!).
+                  - Generates **3,000 synthetic images** (1,500 Melanoma, 1,500 Dermatofibroma), converted to pixels and passed through the same augmentation + normalization as real images.
+                  - Image quality measured with **FID / KID** against a real-vs-real reference.
+                - **Result**: see the Results tab (`dcgan` vs `weighted_loss` isolates the GAN's effect).
 
                 ---
 
@@ -570,27 +528,16 @@ def build_app():
 
                 | Category | Technology | Usage |
                 | :--- | :--- | :--- |
-                | **Core Framework** | PyTorch 2.8.0 | Tensor computations, Autograd, Model training |
+                | **Core Framework** | PyTorch 2.13 | Tensor computations, Autograd, Model training |
+                | **Serving** | ONNX Runtime + FastAPI | CPU inference API (`api/main.py`), Docker image |
                 | **Vision Library** | torchvision 0.28.0 | EfficientNet-B0 pretrained weights, transforms |
                 | **Hardware Acceleration** | Apple Silicon MPS | GPU acceleration on Mac (`mps` device) |
-                | **Computer Vision** | OpenCV 4.8 & PIL | Image manipulation, JET colormap overlays |
-                | **Data Processing** | Pandas & NumPy | Metadata manipulation, stratified splits |
-                | **Metrics & Evaluation** | Scikit-Learn | Confusion matrices, classification reports |
+                | **Computer Vision** | PIL & OpenCV | Image resizing; Grad-CAM JET colormap overlays |
+                | **Data Processing** | Pandas & NumPy | Metadata, lesion-level stratified splits |
+                | **Metrics & Evaluation** | Scikit-Learn | AUROC, balanced accuracy, bootstrap CIs, Ledoit-Wolf OOD covariance |
                 | **Visualization** | Matplotlib & Seaborn | Loss curves, bar charts, confusion matrix plots |
                 | **Web Deployment** | Gradio 6.20.0 | Multi-tab UI, interactive image analysis |
 
-                ---
-
-                ## 🎙 4. Resume & Interview Talking Points
-
-                > **Q: Why not just evaluate model performance using accuracy?**  
-                > *"In HAM10000, 67% of images are benign Melanocytic Nevi. A model predicting 'benign' every time gets 67% accuracy but misses 100% of cancers. We prioritized per-class Recall and Macro F1 to ensure high sensitivity on malignant classes."*
-
-                > **Q: Why use a GAN instead of standard data augmentation?**  
-                > *"Standard augmentations (flips, rotations, crops) simply replicate existing feature points. A Conditional DCGAN learns the underlying latent distribution of rare lesions and generates novel synthetic samples, filling sparse regions of the feature space."*
-
-                > **Q: How does Grad-CAM improve medical AI adoption?**  
-                > *"Clinicians will not trust uninterpretable predictions. Grad-CAM visualizes the specific lesion boundaries, pigment networks, or erythema regions driving the network's classification, enabling clinical verification."*
                 """)
 
     return demo
@@ -598,4 +545,5 @@ def build_app():
 
 if __name__ == "__main__":
     demo = build_app()
-    demo.launch(share=False, server_name="0.0.0.0", server_port=7860)
+    demo.launch(share=False, server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)),
+                max_file_size="10mb")

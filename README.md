@@ -58,6 +58,38 @@ python -m pytest                                # split / metric / GAN unit test
 Model selection uses validation balanced accuracy for every variant (validation loss
 is not comparable across weighted and unweighted losses).
 
+## 🚀 Deployment
+
+```
+trained run ──► scripts/build_release.py ──► models/
+                 • temperature scaling (calibration)        model_info.json  (committed)
+                 • Mahalanobis OOD detector                  ood_stats.npz
+                 • ONNX export (+ INT8 attempt)              classifier_fp32.onnx / classifier.pth
+                 • accuracy + CPU latency per engine
+models/ ──► api/main.py   FastAPI + ONNX Runtime (Docker, no PyTorch)
+        └─► app.py        Gradio UI + Grad-CAM (Hugging Face Spaces)
+```
+
+**Safeguards for public use:** calibrated probabilities; rejection of non-lesion images
+(Mahalanobis distance on penultimate features, threshold set on validation lesions);
+10 MB upload limit; per-IP rate limiting; images processed in memory and never stored;
+disclaimer on every response. Full numbers: `results/release_report.json`.
+
+```bash
+# 1. Build release artifacts from a trained run
+python -m scripts.build_release --run results/ablation/<variant>/seed0 --ood-dir <folder of non-lesion photos>
+
+# 2a. REST API (ONNX Runtime)
+uvicorn api.main:app --port 8000            # or: docker build -t melanoma-api . && docker run -p 8000:8000 melanoma-api
+curl -F "file=@assets/samples/mel_ISIC_0024367.jpg;type=image/jpeg" localhost:8000/predict
+
+# 2b. Gradio demo -> Hugging Face Spaces
+python app.py                                # local
+bash scripts/make_space.sh && hf upload <user>/melanoma-detection build/hf_space . --repo-type space
+```
+
+CI (`.github/workflows/ci.yml`) runs the split, metric, GAN and API tests on every push.
+
 ## 📊 Dataset
 
 **HAM10000** — "Human Against Machine with 10,000 training images"

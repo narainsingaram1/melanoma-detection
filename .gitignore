@@ -22,3 +22,8 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Release artifacts (model_info.json is committed; binaries go to the HF Hub)
+models/*
+!models/model_info.json
+build/

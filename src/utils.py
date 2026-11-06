@@ -5,21 +5,8 @@ import os
 import logging
 from typing import Dict, List, Any
 
-# Constants
-IMG_SIZE = 224
-NUM_CLASSES = 7
-RARE_CLASSES = ['mel', 'df']
+from src.constants import CLASSES, CLASS_NAMES, IMG_SIZE, NUM_CLASSES, RARE_CLASSES  # noqa: F401
 
-CLASSES = ['akiec', 'bcc', 'bkl', 'df', 'mel', 'nv', 'vasc']
-CLASS_NAMES = {
-    'akiec': 'Actinic Keratoses',
-    'bcc': 'Basal Cell Carcinoma',
-    'bkl': 'Benign Keratosis',
-    'df': 'Dermatofibroma',
-    'mel': 'Melanoma',
-    'nv': 'Melanocytic Nevi',
-    'vasc': 'Vascular Lesions'
-}
 
 def get_device() -> torch.device:
     """Returns the best available PyTorch device."""

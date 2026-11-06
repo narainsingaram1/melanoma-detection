@@ -1,0 +1,11 @@
+*
+!requirements-api.txt
+!src/__init__.py
+!src/constants.py
+!src/inference.py
+!api/
+!models/model_info.json
+!models/ood_stats.npz
+!models/classifier_fp32.onnx
+!models/classifier_int8.onnx
+**/__pycache__
