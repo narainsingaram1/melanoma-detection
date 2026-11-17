@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/narainsingaram1/melanoma-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/narainsingaram1/melanoma-detection/actions/workflows/ci.yml)
 
+**[▶ Live demo](https://narainsingaram1.github.io/melanoma-detection/)**: upload a dermoscopy image and get calibrated class probabilities and a Grad-CAM map. The model runs in your browser, so images never leave your device.
+
 A complete deep learning pipeline for skin cancer classification using the **HAM10000** dataset, featuring a custom CNN baseline, transfer learning with EfficientNet-B0, GAN-based synthetic data augmentation for rare class balancing, and Grad-CAM explainability.
 
 ## 📋 Table of Contents
@@ -88,6 +90,22 @@ curl -F "file=@assets/samples/mel_ISIC_0024367.jpg;type=image/jpeg" localhost:80
 # 2b. Gradio demo -> Hugging Face Spaces
 python app.py                                # local
 bash scripts/make_space.sh && hf upload <user>/melanoma-detection build/hf_space . --repo-type space
+```
+
+### Live demo (GitHub Pages, in-browser)
+
+The public demo is a static site in `web/` that runs the model with ONNX Runtime Web, so it
+needs no server and costs nothing to host. `scripts/build_web.py` exports one ONNX graph
+that returns calibrated probabilities, the Mahalanobis OOD score and an exact Grad-CAM map
+for each class (the head after the last conv block is pool → Linear → ReLU → Linear, so the
+gradient has a closed form). It then checks all three outputs against the PyTorch app on the
+sample images. `web/app.js` ports Pillow's bilinear resize, so browser and Python inputs are
+identical.
+
+```bash
+python -m scripts.build_web                  # web/model/lesion.onnx, web/data/, web/samples/
+python -m http.server 8765 --directory web   # local preview
+# deploy: push the contents of web/ (plus an empty .nojekyll) to the gh-pages branch
 ```
 
 CI (`.github/workflows/ci.yml`) runs the split, metric, GAN and API tests on every push.
