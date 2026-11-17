@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Melanoma Detection AI</title>
+<meta name="description" content="Classifies a dermoscopy image into seven skin-lesion types with calibrated probabilities and Grad-CAM. Runs entirely in your browser.">
+<meta property="og:title" content="Melanoma Detection AI">
+<meta property="og:description" content="EfficientNet-B0 skin-lesion classifier with calibrated probabilities, Grad-CAM and out-of-distribution rejection, running in the browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%230f6b78' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%230f6b78'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="preload" href="model/lesion.onnx" as="fetch" crossorigin>
+</head>
+<body>
+<div class="wrap">
+  <header class="mx-header">
+    <div class="mx-brand">
+      <span class="mx-name">Melanoma Detection AI</span>
+      <span class="mx-meta" id="meta">EfficientNet-B0 · plain · seed 0 · runs in your browser</span>
+      <a class="mx-gh" href="https://github.com/narainsingaram1/melanoma-detection">Code on GitHub</a>
+    </div>
+    <p class="mx-lede">Classifies a dermoscopy image into seven skin-lesion types, with calibrated
+      probabilities and a Grad-CAM map of the regions behind each prediction</p>
+    <p class="mx-disclaimer">Research demo, not a medical device. Do not use it for diagnosis; see a dermatologist
+      about any concerning skin lesion. The model runs on your device, so uploaded images never leave it.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="analyze">Analyze</button>
+    <button role="tab" aria-selected="false" data-tab="results">Results</button>
+    <button role="tab" aria-selected="false" data-tab="method">Method</button>
+  </nav>
+
+  <section id="tab-analyze" class="panel">
+    <div class="grid">
+      <div class="col-in">
+        <label class="drop" id="drop" tabindex="0">
+          <input type="file" id="file" accept="image/*" hidden>
+          <img id="preview" alt="Selected image" hidden>
+          <span class="drop-empty" id="dropEmpty">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <span><strong>Drop a dermoscopy image</strong> or click to choose a file</span>
+            <span class="hint">JPEG or PNG, up to 10 MB. You can also paste an image</span>
+          </span>
+        </label>
+        <button class="mx-analyze" id="analyze" disabled>Loading model…</button>
+        <div class="progress" id="progress" hidden><span id="progressBar"></span></div>
+
+        <div class="mx-kicker samples-label">Held-out test images, one per class. Click one to analyze it</div>
+        <div class="samples" id="samples"></div>
+
+        <div class="mx-ref"><div class="mx-kicker">Classes</div><ul id="classRef"></ul></div>
+      </div>
+
+      <div class="col-out" aria-live="polite">
+        <div id="result"><div class="mx-card mx-note"><div class="mx-note-title">No image analyzed yet</div>
+          <p>Upload a dermoscopy image or pick one of the held-out test images</p></div></div>
+        <div id="plate"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-results" class="panel mx-prose" hidden>
+    <h2>Results on the held-out test set</h2>
+    <div id="resultsBody">Loading…</div>
+  </section>
+
+  <section id="tab-method" class="panel mx-prose" hidden>
+    <h2>How the model was built and evaluated</h2>
+    <h3>The problem: class imbalance</h3>
+    <p>In HAM10000 (10,015 dermoscopy images of 7,470 lesions), benign nevi (<code>nv</code>) are 67% of images, while melanoma (<code>mel</code>) and dermatofibroma (<code>df</code>) are small minorities. A classifier trained naively can look accurate overall by favouring <code>nv</code> while missing the cancers that matter most.</p>
+    <ul>
+      <li><strong>Objective:</strong> compare imbalance strategies (class-weighted loss, oversampling and conditional DCGAN synthetic images) under one training recipe, judged on balanced accuracy, macro AUROC and melanoma sensitivity at 90% specificity</li>
+      <li><strong>Leakage-free evaluation:</strong> many lesions were photographed more than once. An image-level split put the same lesion in train and test for 36% of test images in the first version of this project, so every result here uses a lesion-level split</li>
+    </ul>
+    <h3>1. Baseline CNN</h3>
+    <p>A 4-block convolutional network trained from scratch as a reference point.</p>
+<pre><code>Input 224×224×3
+[Conv 3→32 → BN → ReLU → Conv 32→32 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 32→64 → BN → ReLU → Conv 64→64 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 64→128 → BN → ReLU → Conv 128→128 → BN → ReLU → MaxPool → Dropout 0.25]
+[Conv 128→256 → BN → ReLU → Conv 256→256 → BN → ReLU → MaxPool → Dropout 0.25]
+Global average pool → Dense 256→128 → ReLU → Dropout 0.5 → Dense 128→7</code></pre>
+    <p>Loss: inverse-frequency class-weighted cross-entropy, <span class="math">L = −Σ<sub>c</sub> w<sub>c</sub> y<sub>c</sub> log ŷ<sub>c</sub></span> with <span class="math">w<sub>c</sub> = N / (C · N<sub>c</sub>)</span>. Results: <code>baseline_cnn</code> row in the Results tab</p>
+    <h3>2. Transfer learning with EfficientNet-B0</h3>
+    <p>ImageNet-pretrained EfficientNet-B0 (~4.7M parameters), trained in two stages:</p>
+    <ol>
+      <li>Last blocks and a new head (<code>Dense 1280→512 → ReLU → Dense 512→7</code>) at learning rate 10<sup>−3</sup> for 3 epochs</li>
+      <li>Full fine-tuning at learning rate 10<sup>−4</sup> with ReduceLROnPlateau and early stopping</li>
+    </ol>
+    <p>Checkpoints are selected on validation balanced accuracy, which stays comparable across weighted and unweighted losses</p>
+    <h3>3. Conditional DCGAN augmentation</h3>
+    <p>A class-conditional DCGAN generates 224×224 images of the two rarest classes (<code>mel</code>, <code>df</code>).</p>
+    <ul>
+      <li><strong>Generator:</strong> a 100-d noise vector plus a 10-d class embedding → dense to 512×7×7 → 5 transposed-conv blocks → Tanh</li>
+      <li><strong>Discriminator:</strong> image plus a spatial class-embedding channel → 5 conv blocks with LeakyReLU 0.2 → real/fake sigmoid</li>
+      <li><strong>Training:</strong> one-sided label smoothing (0.9 / 0.1); 1,500 synthetic images per class, converted to pixels and given the same augmentation and normalization as real images</li>
+      <li><strong>Quality:</strong> FID and KID against a real-vs-real reference. Results: <code>dcgan</code> vs <code>weighted_loss</code> in the Results tab isolates the GAN's effect</li>
+    </ul>
+    <h3>4. Grad-CAM</h3>
+    <p>For the predicted class <i>c</i>, the gradients of its score over the last convolutional block's activations <i>A<sup>k</sup></i> give channel weights <span class="math">α<sub>k</sub> = mean<sub>i,j</sub> ∂y<sup>c</sup>/∂A<sup>k</sup><sub>ij</sub></span>. The map <span class="math">ReLU(Σ<sub>k</sub> α<sub>k</sub> A<sup>k</sup>)</span> is upsampled from 7×7 to 224×224 and drawn with the inferno colormap. Because that block is followed by global average pooling and a two-layer head, the gradient has a closed form, so this page computes the exact Grad-CAM inside the ONNX graph</p>
+    <h3>5. Serving safeguards</h3>
+    <ul>
+      <li><strong>Calibration:</strong> temperature scaling fitted on the validation set</li>
+      <li><strong>Out-of-distribution rejection:</strong> Mahalanobis distance from the image's penultimate features to the nearest class mean (Ledoit-Wolf covariance), with a threshold set on validation lesions</li>
+      <li><strong>Inference:</strong> this page runs the model with ONNX Runtime Web in your browser; the repository also has a FastAPI + ONNX Runtime service in Docker and a Gradio app</li>
+    </ul>
+    <h3>Stack</h3>
+    <table>
+      <thead><tr><th>Area</th><th>Tools</th></tr></thead>
+      <tbody>
+        <tr><td>Training</td><td>PyTorch 2.13, torchvision 0.28, Apple Silicon MPS</td></tr>
+        <tr><td>Evaluation</td><td>scikit-learn (AUROC, balanced accuracy, Ledoit-Wolf), lesion-level bootstrap CIs</td></tr>
+        <tr><td>Serving</td><td>ONNX Runtime (Web, Python), FastAPI, Docker</td></tr>
+        <tr><td>Interface</td><td>Static HTML/JS on GitHub Pages; Gradio 6.20 for the local app</td></tr>
+      </tbody>
+    </table>
+    <p class="credit">Trained on HAM10000 (Tschandl et al., 2018, CC BY-NC 4.0). Sample images are from its held-out test split.</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

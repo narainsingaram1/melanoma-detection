@@ -1,0 +1,227 @@
+<p><strong>Data leakage fixed:</strong> the original image-level split had <strong>543 of 1503 test images (36.1%)</strong> sharing a lesion with training. All numbers below use a lesion-level split with 0 overlap.</p>
+<h2>Imbalance-strategy ablation</h2>
+<p>Mean ± sample std across training seeds; split seed fixed at 42.</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Seeds</th>
+<th>Accuracy</th>
+<th>Balanced acc</th>
+<th>Macro F1</th>
+<th>Macro AUROC</th>
+<th>Mel AUROC</th>
+<th>Mel recall</th>
+<th>Mel sens @90% spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>baseline_cnn</td>
+<td>1</td>
+<td>0.493</td>
+<td>0.336</td>
+<td>0.282</td>
+<td>0.813</td>
+<td>0.799</td>
+<td>0.713</td>
+<td>0.383</td>
+</tr>
+<tr>
+<td>plain</td>
+<td>1</td>
+<td>0.826</td>
+<td>0.710</td>
+<td>0.705</td>
+<td>0.961</td>
+<td>0.912</td>
+<td>0.533</td>
+<td>0.701</td>
+</tr>
+<tr>
+<td>weighted_loss</td>
+<td>1</td>
+<td>0.767</td>
+<td>0.754</td>
+<td>0.668</td>
+<td>0.955</td>
+<td>0.892</td>
+<td>0.683</td>
+<td>0.677</td>
+</tr>
+<tr>
+<td>oversample</td>
+<td>1</td>
+<td>0.813</td>
+<td>0.723</td>
+<td>0.708</td>
+<td>0.959</td>
+<td>0.900</td>
+<td>0.563</td>
+<td>0.665</td>
+</tr>
+<tr>
+<td>dcgan</td>
+<td>1</td>
+<td>0.768</td>
+<td>0.804</td>
+<td>0.695</td>
+<td>0.956</td>
+<td>0.886</td>
+<td>0.629</td>
+<td>0.653</td>
+</tr>
+</tbody>
+</table>
+<h3>Paired difference vs <code>weighted_loss</code> (same seed)</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Seeds</th>
+<th>Accuracy</th>
+<th>Balanced acc</th>
+<th>Macro F1</th>
+<th>Macro AUROC</th>
+<th>Mel AUROC</th>
+<th>Mel recall</th>
+<th>Mel sens @90% spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>baseline_cnn</td>
+<td>1</td>
+<td>-0.274</td>
+<td>-0.418</td>
+<td>-0.385</td>
+<td>-0.142</td>
+<td>-0.094</td>
+<td>+0.030</td>
+<td>-0.293</td>
+</tr>
+<tr>
+<td>plain</td>
+<td>1</td>
+<td>+0.059</td>
+<td>-0.044</td>
+<td>+0.037</td>
+<td>+0.006</td>
+<td>+0.020</td>
+<td>-0.150</td>
+<td>+0.024</td>
+</tr>
+<tr>
+<td>oversample</td>
+<td>1</td>
+<td>+0.046</td>
+<td>-0.031</td>
+<td>+0.040</td>
+<td>+0.004</td>
+<td>+0.007</td>
+<td>-0.120</td>
+<td>-0.012</td>
+</tr>
+<tr>
+<td>dcgan</td>
+<td>1</td>
+<td>+0.001</td>
+<td>+0.050</td>
+<td>+0.027</td>
+<td>+0.001</td>
+<td>-0.006</td>
+<td>-0.054</td>
+<td>-0.024</td>
+</tr>
+</tbody>
+</table>
+<h3>Per-run 95% CI (lesion-level bootstrap)</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Seed</th>
+<th>Balanced acc</th>
+<th>Macro AUROC</th>
+<th>Mel sens @90% spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>baseline_cnn</td>
+<td>0</td>
+<td>0.336 [0.299, 0.380]</td>
+<td>0.813 [0.788, 0.837]</td>
+<td>0.383 [0.278, 0.547]</td>
+</tr>
+<tr>
+<td>plain</td>
+<td>0</td>
+<td>0.710 [0.657, 0.766]</td>
+<td>0.961 [0.952, 0.969]</td>
+<td>0.701 [0.619, 0.813]</td>
+</tr>
+<tr>
+<td>weighted_loss</td>
+<td>0</td>
+<td>0.754 [0.703, 0.803]</td>
+<td>0.955 [0.946, 0.964]</td>
+<td>0.677 [0.585, 0.755]</td>
+</tr>
+<tr>
+<td>oversample</td>
+<td>0</td>
+<td>0.723 [0.668, 0.775]</td>
+<td>0.959 [0.951, 0.968]</td>
+<td>0.665 [0.580, 0.760]</td>
+</tr>
+<tr>
+<td>dcgan</td>
+<td>0</td>
+<td>0.804 [0.764, 0.842]</td>
+<td>0.956 [0.947, 0.963]</td>
+<td>0.653 [0.558, 0.740]</td>
+</tr>
+</tbody>
+</table>
+<h3>Synthetic image quality (Inception-v3 features, lower is better)</h3>
+<p>The real-vs-real row (val vs train images of the same class) is the floor a perfect generator would reach.</p>
+<table>
+<thead>
+<tr>
+<th>Seed</th>
+<th>Class</th>
+<th>n real train</th>
+<th>FID syn</th>
+<th>FID real-ref</th>
+<th>KID syn</th>
+<th>KID real-ref</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>mel</td>
+<td>773</td>
+<td>349.0</td>
+<td>68.1</td>
+<td>0.3608</td>
+<td>0.0006</td>
+</tr>
+<tr>
+<td>0</td>
+<td>df</td>
+<td>71</td>
+<td>369.6</td>
+<td>152.8</td>
+<td>0.3427</td>
+<td>0.0120</td>
+</tr>
+</tbody>
+</table>
+<h2>Deployed model</h2>
+<ul>
+<li><strong>Model:</strong> EfficientNet-B0, <code>plain</code> variant, seed 0</li>
+<li><strong>Calibration:</strong> temperature scaling (T = 1.49), expected calibration error 0.060 → 0.020</li>
+<li><strong>Out-of-distribution rejection</strong> (Mahalanobis on penultimate features): rejects uniform noise 100%, solid color 100%, gradient 100%, checkerboard 100%, natural photos 92%; wrongly rejects 2.7% of real test lesions</li>
+</ul>
